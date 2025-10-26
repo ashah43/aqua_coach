@@ -1,75 +1,120 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
-
-import { HelloWave } from '@/components/HelloWave';
-import ParallaxScrollView from '@/components/ParallaxScrollView';
+// app/(tabs)/index.tsx
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
+import React from 'react';
+import { ScrollView, StyleSheet, View } from 'react-native';
 
 export default function HomeScreen() {
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
+    <ScrollView contentContainerStyle={styles.screen}>
+      <ThemedView style={styles.header}>
+        <ThemedText type="title" style={styles.title}>
+          Dashboard
         </ThemedText>
+        <ThemedText style={styles.subtitle}>Welcome Back, Group 27!</ThemedText>
       </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+
+      <View style={styles.grid}>
+        <ThemedView style={styles.card}>
+          <ThemedText style={styles.cardLabelTop}>This{'\n'}Week</ThemedText>
+          <ThemedText style={styles.cardValue}>12</ThemedText>
+          <ThemedText style={styles.cardLabelBottom}>Sessions</ThemedText>
+        </ThemedView>
+
+        <ThemedView style={styles.card}>
+          <ThemedText style={styles.cardLabelTop}>Distance</ThemedText>
+          <ThemedText style={styles.cardValue}>24.5km</ThemedText>
+          <ThemedText style={styles.cardLabelBottom}>This Week</ThemedText>
+        </ThemedView>
+
+        <ThemedView style={styles.card}>
+          <ThemedText style={styles.cardLabelTop}>Avg{'\n'}Time</ThemedText>
+          <ThemedText style={styles.cardValue}>32m
+          </ThemedText>
+          <ThemedText style={styles.cardLabelBottom}>Per{'\n'}Session</ThemedText>
+        </ThemedView>
+
+        <ThemedView style={styles.card}>
+          <ThemedText style={styles.cardLabelTop}>Avg{'\n'}Power</ThemedText>
+          <ThemedText style={styles.cardValue}>215W</ThemedText>
+          <ThemedText style={styles.cardLabelBottom}>This Week</ThemedText>
+        </ThemedView>
+      </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  screen: {
+    paddingHorizontal: 22,
+    paddingTop: 24,
+    paddingBottom: 44,
+    rowGap: 18,
   },
-  stepContainer: {
-    gap: 8,
+
+  header: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 26,
+    paddingVertical: 40,
+    paddingHorizontal: 18,
+    marginTop: 6,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#EEEFF2',
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 2,
+  },
+  title: {
+    fontSize: 30,
     marginBottom: 8,
+    letterSpacing: -0.2,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  subtitle: {
+    fontSize: 17,
+    opacity: 0.7,
+  },
+
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+
+  card: {
+    width: '48%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 22,
+    paddingVertical: 22,
+    paddingHorizontal: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#EEEFF2',
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 2,
+    minHeight: 150,
+  },
+  cardLabelTop: {
+    fontSize: 15,
+    opacity: 0.6,
+    lineHeight: 20,
+  },
+  cardValue: {
+    fontSize: 36,
+    fontWeight: '600',      // lighter than 700 to avoid chunky numerals
+    lineHeight: 40,         // keeps vertical spacing comfy
+    marginVertical: 10,
+    letterSpacing: 0,       // remove extra compression
+    // NOTE: intentionally NOT using fontVariant: ['tabular-nums'] to avoid squished digits on iOS
+  },
+  cardLabelBottom: {
+    fontSize: 15,
+    opacity: 0.6,
+    lineHeight: 20,
   },
 });
