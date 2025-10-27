@@ -2,45 +2,37 @@
 
 This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
 
+Run this first to install npm:
+# 1) clone this repo in vscode and then go to vscode and in the terminal tab press new terminal
+
+# Then Install NVM by pasting this in the terminal:
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+
+# 2) Load nvm in your current shell by pasting these two lines in the same command in the same terminal:
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+
+# 3) Install and use the current LTS of Node (this gives you npm too)
+nvm install --lts
+nvm use --lts
+
+# 4) Do this next
+npm install
+
+# 5) Verify
+node -v
+npm -v
+
+#6) Do this next
+
+npx expo install expo-sensors
+
+
 ## Get started
 
-1. Install dependencies
+1. . Start the app
 
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
    npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
-```
-
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
 
 ## Join the community
 
