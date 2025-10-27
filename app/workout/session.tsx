@@ -2,7 +2,8 @@
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { Stack, useRouter } from 'expo-router';
-import React, { useMemo, useState } from 'react';
+import { DeviceMotion, type DeviceMotionMeasurement } from 'expo-sensors';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import Svg, { Line, Path, Rect } from 'react-native-svg';
 
@@ -44,13 +45,15 @@ function useSmoothPath(
 
     data.forEach((v, i) => {
       xs.push(padX + i * stepX);
-      ys.push(padY + (1 - (v - min) / range) * h); // invert so bigger values are higher
+      // invert y so larger values are “higher”
+      ys.push(padY + (1 - (v - min) / range) * h);
     });
 
     let d = `M ${xs[0]} ${ys[0]}`;
     for (let i = 0; i < xs.length - 1; i++) {
       const x_mid = (xs[i] + xs[i + 1]) / 2;
       const y_mid = (ys[i] + ys[i + 1]) / 2;
+      // Quadratic curve to midpoint; SVG smooths nicely with consecutive Q/T
       d += ` Q ${xs[i]} ${ys[i]} ${x_mid} ${y_mid}`;
     }
     d += ` T ${xs[xs.length - 1]} ${ys[ys.length - 1]}`;
@@ -58,24 +61,58 @@ function useSmoothPath(
   }, [data, width, height, padX, padY]);
 }
 
-function CurveChart({ title, data }: { title: string; data: number[] }) {
+function CurveChart({
+  title,
+  data,
+}: {
+  title: string;
+  data: number[];
+}) {
   const WIDTH = 320;
   const HEIGHT = 180;
+
   const path = useSmoothPath(data, WIDTH, HEIGHT);
 
   return (
     <ThemedView style={styles.chartCard}>
       <ThemedText style={styles.chartTitle}>{title}</ThemedText>
+
       <View style={styles.chartArea}>
         <Svg width="100%" height="100%" viewBox={`0 0 ${WIDTH} ${HEIGHT}`}>
+          {/* Background */}
           <Rect x={0} y={0} width={WIDTH} height={HEIGHT} rx={12} fill="#F7F8FB" />
-          {[0, 1, 2, 3].map(i => (
-            <Line key={`h-${i}`} x1={16} x2={WIDTH - 16} y1={16 + i * 36} y2={16 + i * 36} stroke="#E6EAF2" strokeWidth={1} />
+
+          {/* Grid (light) */}
+          {[0, 1, 2, 3].map((i) => (
+            <Line
+              key={`h-${i}`}
+              x1={16}
+              x2={WIDTH - 16}
+              y1={16 + i * 36}
+              y2={16 + i * 36}
+              stroke="#E6EAF2"
+              strokeWidth={1}
+            />
           ))}
-          {[0, 1, 2, 3, 4].map(i => (
-            <Line key={`v-${i}`} y1={16} y2={HEIGHT - 16} x1={16 + i * 64} x2={16 + i * 64} stroke="#E6EAF2" strokeWidth={1} />
+          {[0, 1, 2, 3, 4].map((i) => (
+            <Line
+              key={`v-${i}`}
+              y1={16}
+              y2={HEIGHT - 16}
+              x1={16 + i * 64}
+              x2={16 + i * 64}
+              stroke="#E6EAF2"
+              strokeWidth={1}
+            />
           ))}
-          <Path d={`${path} L ${WIDTH - 16} ${HEIGHT - 16} L ${16} ${HEIGHT - 16} Z`} fill="rgba(11,14,26,0.06)" />
+
+          {/* Area (subtle) */}
+          <Path
+            d={`${path} L ${WIDTH - 16} ${HEIGHT - 16} L ${16} ${HEIGHT - 16} Z`}
+            fill="rgba(11,14,26,0.06)"
+          />
+
+          {/* Curve */}
           <Path d={path} stroke="#0B0E1A" strokeWidth={2.5} fill="none" />
         </Svg>
       </View>
@@ -86,17 +123,133 @@ function CurveChart({ title, data }: { title: string; data: number[] }) {
 export default function WorkoutSessionScreen() {
   const router = useRouter();
 
-  // Existing toggles (kept)
-  const [showPower, setShowPower] = useState(false);
-  const [showRate, setShowRate] = useState(false);
-
-  // Required/visible options
+  // Existing toggles (kept for UI)
+  const [showPowerGraph, setShowPowerGraph] = useState(true);
+  const [showAccelGraph, setShowAccelGraph] = useState(true);
   const [showSplit, setShowSplit] = useState(true);
   const [showAvgPower, setShowAvgPower] = useState(true);
-  const [showAccelGraph, setShowAccelGraph] = useState(true);
-  const [showPowerGraph, setShowPowerGraph] = useState(true);
 
-  // Placeholder curve data
+  // “Live” metrics
+  const [distanceM, setDistanceM] = useState(0);
+  const [elapsedMs, setElapsedMs] = useState(0);
+
+  // Start running as soon as this screen opens (since the button navigated here)
+  const [isRunning] = useState(true);
+
+  // Refs for simple 2-axis integration (phone lying roughly flat / mounted on erg)
+  const lastTsRef = useRef<number | null>(null);
+  const vxRef = useRef(0);
+  const vyRef = useRef(0);
+  const sRef = useRef(0); // scalar path length (meters)
+  const startMsRef = useRef<number | null>(null);
+
+  // Ask for motion permission on iOS (Expo Go on device)
+  async function ensureMotionPermission() {
+    const { status } = await DeviceMotion.getPermissionsAsync();
+    if (status !== 'granted') {
+      const res = await DeviceMotion.requestPermissionsAsync();
+      if (res.status !== 'granted') throw new Error('Motion permission not granted');
+    }
+  }
+
+  // Simple timer to update elapsed
+  useEffect(() => {
+    if (!isRunning) return;
+    startMsRef.current = Date.now();
+    const id = setInterval(() => {
+      if (startMsRef.current) setElapsedMs(Date.now() - startMsRef.current);
+    }, 250);
+    return () => clearInterval(id);
+  }, [isRunning]);
+
+  // DeviceMotion listener (gravity-compensated acceleration where available)
+  useEffect(() => {
+    if (!isRunning) return;
+
+    let removed = false;
+
+    (async () => {
+      try {
+        await ensureMotionPermission();
+      } catch {
+        return;
+      }
+
+      DeviceMotion.setUpdateInterval(50); // ~20 Hz
+
+      const sub = DeviceMotion.addListener((evt: DeviceMotionMeasurement) => {
+        if (removed) return;
+
+        const a = evt.acceleration ?? evt.accelerationIncludingGravity ?? { x: 0, y: 0, z: 0 };
+
+        // Use mostly horizontal-plane motion for rowing
+        let ax = a.x ?? 0;
+        let ay = a.y ?? 0;
+
+        const now = Date.now();
+        let dt = 0;
+        if (lastTsRef.current == null) {
+          lastTsRef.current = now;
+          return;
+        } else {
+          dt = (now - lastTsRef.current) / 1000;
+          lastTsRef.current = now;
+        }
+        if (dt <= 0 || dt > 0.2) return; // guard against big gaps / pauses
+
+        // Tiny-jitter high-pass (tune as needed)
+        const THRESH = 0.02; // ~0.02 m/s^2
+        if (Math.abs(ax) < THRESH) ax = 0;
+        if (Math.abs(ay) < THRESH) ay = 0;
+
+        // Integrate acceleration -> velocity
+        vxRef.current += ax * dt;
+        vyRef.current += ay * dt;
+
+        // Light damping to fight drift
+        const DAMP = 0.98;
+        vxRef.current *= DAMP;
+        vyRef.current *= DAMP;
+
+        // Speed magnitude (always positive)
+        const speed = Math.sqrt(vxRef.current * vxRef.current + vyRef.current * vyRef.current);
+
+        // Convert to meters traveled, scaled slightly for feel
+        const SCALE = 0.85; // tune to match real meters on your rig
+        sRef.current += speed * dt * SCALE;
+
+        setDistanceM(sRef.current);
+      });
+
+      // cleanup function
+      return () => {
+        removed = true;
+        sub.remove();
+      };
+    })();
+
+    return () => {
+      removed = true;
+    };
+  }, [isRunning]);
+
+  // Derived text helpers
+  const elapsedSec = Math.max(0, Math.floor(elapsedMs / 1000));
+  const distanceText = `${distanceM.toFixed(1)}m`;
+
+  // Split pace (sec / 500m)
+  const splitText = useMemo(() => {
+    if (!showSplit) return '';
+    if (distanceM < 1 || elapsedSec === 0) return '—';
+    const paceSecPer500 = (elapsedMs / 1000) * (500 / distanceM);
+    const mm = Math.floor(paceSecPer500 / 60);
+    const ss = Math.floor(paceSecPer500 % 60)
+      .toString()
+      .padStart(2, '0');
+    return `${mm}:${ss} /500m`;
+  }, [showSplit, distanceM, elapsedMs, elapsedSec]);
+
+  // Placeholder curves (visual only)
   const accelCurve = [2, 8, 22, 34, 12, 3, 2, 2, 18, 28, 35, 14, 4, 3, 2];
   const powerCurve = [6, 10, 18, 26, 20, 14, 10, 22, 30, 20, 12, 18, 14, 26, 24];
 
@@ -119,27 +272,27 @@ export default function WorkoutSessionScreen() {
 
         <View style={styles.divider} />
 
-        {/* SMALL controls now at the very top */}
+        {/* SMALL controls at the very top */}
         <View style={styles.controlsWrap}>
           <Pill
             label={(showSplit ? '✓ ' : '👁️ ') + 'Split'}
             active={showSplit}
-            onPress={() => setShowSplit(v => !v)}
+            onPress={() => setShowSplit((v) => !v)}
           />
           <Pill
             label={(showAvgPower ? '✓ ' : '👁️ ') + 'Avg Power'}
             active={showAvgPower}
-            onPress={() => setShowAvgPower(v => !v)}
+            onPress={() => setShowAvgPower((v) => !v)}
           />
           <Pill
             label={(showAccelGraph ? '✓ ' : '👁️ ') + 'Acceleration'}
             active={showAccelGraph}
-            onPress={() => setShowAccelGraph(v => !v)}
+            onPress={() => setShowAccelGraph((v) => !v)}
           />
           <Pill
             label={(showPowerGraph ? '✓ ' : '👁️ ') + 'Power'}
             active={showPowerGraph}
-            onPress={() => setShowPowerGraph(v => !v)}
+            onPress={() => setShowPowerGraph((v) => !v)}
           />
         </View>
 
@@ -147,17 +300,19 @@ export default function WorkoutSessionScreen() {
         <View style={styles.metricsRow}>
           <ThemedView style={styles.metricCardSm}>
             <ThemedText style={styles.metricLabelSm}>Time</ThemedText>
-            <ThemedText style={styles.metricValueSm}>0:00</ThemedText>
+            <ThemedText style={styles.metricValueSm}>
+              {`${Math.floor(elapsedSec / 60)}:${(elapsedSec % 60).toString().padStart(2, '0')}`}
+            </ThemedText>
             <View style={styles.progressBarTrackSm}>
-              <View style={[styles.progressBarFill, { width: '0%' }]} />
+              <View style={[styles.progressBarFill, { width: '100%' }]} />
             </View>
           </ThemedView>
 
           <ThemedView style={styles.metricCardSm}>
             <ThemedText style={styles.metricLabelSm}>Distance</ThemedText>
-            <ThemedText style={styles.metricValueSm}>0m</ThemedText>
+            <ThemedText style={styles.metricValueSm}>{distanceText}</ThemedText>
             <View style={styles.progressBarTrackSm}>
-              <View style={[styles.progressBarFill, { width: '0%' }]} />
+              <View style={[styles.progressBarFill, { width: '100%' }]} />
             </View>
           </ThemedView>
         </View>
@@ -166,9 +321,9 @@ export default function WorkoutSessionScreen() {
           {showSplit && (
             <ThemedView style={styles.metricCardSm}>
               <ThemedText style={styles.metricLabelSm}>Split (per 500m)</ThemedText>
-              <ThemedText style={styles.metricValueSm}>2:05 /500m</ThemedText>
+              <ThemedText style={styles.metricValueSm}>{splitText}</ThemedText>
               <View style={styles.progressBarTrackSm}>
-                <View style={[styles.progressBarFill, { width: '42%' }]} />
+                <View style={[styles.progressBarFill, { width: '100%' }]} />
               </View>
             </ThemedView>
           )}
@@ -176,6 +331,7 @@ export default function WorkoutSessionScreen() {
           {showAvgPower && (
             <ThemedView style={styles.metricCardSm}>
               <ThemedText style={styles.metricLabelSm}>Average Power</ThemedText>
+              {/* Placeholder until you compute power from sensors */}
               <ThemedText style={styles.metricValueSm}>215 W</ThemedText>
               <View style={styles.progressBarTrackSm}>
                 <View style={[styles.progressBarFill, { width: '65%' }]} />
@@ -236,13 +392,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#D9DCE3',
-    paddingVertical: 6,     // smaller
-    paddingHorizontal: 10,  // smaller
+    paddingVertical: 6,
+    paddingHorizontal: 10,
     borderRadius: 10,
     backgroundColor: '#FFFFFF',
   },
   pillActive: { backgroundColor: '#0B0E1A', borderColor: '#0B0E1A' },
-  pillText: { fontSize: 12, opacity: 0.9 },          // smaller text
+  pillText: { fontSize: 12, opacity: 0.9 },
   pillTextActive: { color: '#FFFFFF', opacity: 1, fontWeight: '600' },
 
   // METRICS — smaller version
@@ -255,7 +411,7 @@ const styles = StyleSheet.create({
     width: '48%',
     backgroundColor: '#FFFFFF',
     borderRadius: R,
-    paddingVertical: 12,  // smaller
+    paddingVertical: 12,
     paddingHorizontal: 12,
     borderWidth: 1,
     borderColor: '#E8EAF0',
