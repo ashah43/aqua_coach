@@ -226,7 +226,7 @@ export default function WorkoutSessionScreen() {
         // Update acceleration chart (use forward/back signed accel)
         setAccelSeries((prev) => {
           const next = prev.slice(1);
-          next.push(ax); // show fore-aft accel; swap to aMag if you prefer magnitude
+          next.push(mag); // show fore-aft accel; swap to aMag if you prefer magnitude
           return next;
         });
       });
