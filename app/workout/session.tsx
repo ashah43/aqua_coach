@@ -93,6 +93,7 @@ export default function WorkoutSessionScreen() {
 
   // Live metrics
   const [distanceM, setDistanceM] = useState(0);
+  const [accelMag, setAccelMag] = useState(0);
   const [elapsedMs, setElapsedMs] = useState(0);
 
   // Realtime acceleration series (forward/back axis) for the chart
@@ -168,6 +169,11 @@ export default function WorkoutSessionScreen() {
         const a = evt.acceleration ?? evt.accelerationIncludingGravity ?? { x: 0, y: 0, z: 0 };
         let ax = a.x ?? 0;
         let ay = a.y ?? 0;
+
+        // Compute magnitude (absolute acceleration intensity)
+        const mag = Math.sqrt(ax * ax + ay * ay + (a.z ?? 0) ** 2);
+        setAccelMag(mag);
+
 
         const now = Date.now();
         if (lastTsRef.current == null) {
@@ -270,56 +276,96 @@ export default function WorkoutSessionScreen() {
 
         <View style={styles.divider} />
 
-        {/* Pills */}
-        <View style={styles.controlsWrap}>
-          <Pill label={(showSplit ? '✓ ' : '👁️ ') + 'Split'} active={showSplit} onPress={() => setShowSplit((v) => !v)} />
-          <Pill label={(showAvgPower ? '✓ ' : '👁️ ') + 'Avg Power'} active={showAvgPower} onPress={() => setShowAvgPower((v) => !v)} />
-          <Pill label={(showAccelGraph ? '✓ ' : '👁️ ') + 'Acceleration'} active={showAccelGraph} onPress={() => setShowAccelGraph((v) => !v)} />
-          <Pill label={(showPowerGraph ? '✓ ' : '👁️ ') + 'Power'} active={showPowerGraph} onPress={() => setShowPowerGraph((v) => !v)} />
-        </View>
+{/* Pills */}
+<View style={styles.controlsWrap}>
+  <Pill
+    label={(showSplit ? '✓ ' : '👁️ ') + 'Split'}
+    active={showSplit}
+    onPress={() => setShowSplit((v) => !v)}
+  />
+  <Pill
+    label={(showAvgPower ? '✓ ' : '👁️ ') + 'Avg Power'}
+    active={showAvgPower}
+    onPress={() => setShowAvgPower((v) => !v)}
+  />
+  <Pill
+    label={(showAccelGraph ? '✓ ' : '👁️ ') + 'Acceleration'}
+    active={showAccelGraph}
+    onPress={() => setShowAccelGraph((v) => !v)}
+  />
+  <Pill
+    label={(showPowerGraph ? '✓ ' : '👁️ ') + 'Power'}
+    active={showPowerGraph}
+    onPress={() => setShowPowerGraph((v) => !v)}
+  />
+</View>
 
-        {/* Metrics */}
-        <View style={styles.metricsRow}>
-          <ThemedView style={styles.metricCardSm}>
-            <ThemedText style={styles.metricLabelSm}>Time</ThemedText>
-            <ThemedText style={styles.metricValueSm}>
-              {`${Math.floor(elapsedSec / 60)}:${(elapsedSec % 60).toString().padStart(2, '0')}`}
-            </ThemedText>
-            <View style={styles.progressBarTrackSm}>
-              <View style={[styles.progressBarFill, { width: '100%' }]} />
-            </View>
-          </ThemedView>
+{/* Metrics */}
+<View style={styles.metricsRow}>
+  {/* Row 1 — Time + Distance */}
+  <ThemedView style={styles.metricCardSm}>
+    <ThemedText style={styles.metricLabelSm}>Time</ThemedText>
+    <ThemedText style={styles.metricValueSm}>
+      {`${Math.floor(elapsedSec / 60)}:${(elapsedSec % 60)
+        .toString()
+        .padStart(2, '0')}`}
+    </ThemedText>
+    <View style={styles.progressBarTrackSm}>
+      <View style={[styles.progressBarFill, { width: '100%' }]} />
+    </View>
+  </ThemedView>
 
-          <ThemedView style={styles.metricCardSm}>
-            <ThemedText style={styles.metricLabelSm}>Distance</ThemedText>
-            <ThemedText style={styles.metricValueSm}>{distanceText}</ThemedText>
-            <View style={styles.progressBarTrackSm}>
-              <View style={[styles.progressBarFill, { width: '100%' }]} />
-            </View>
-          </ThemedView>
-        </View>
+  <ThemedView style={styles.metricCardSm}>
+    <ThemedText style={styles.metricLabelSm}>Distance</ThemedText>
+    <ThemedText style={styles.metricValueSm}>{distanceText}</ThemedText>
+    <View style={styles.progressBarTrackSm}>
+      <View style={[styles.progressBarFill, { width: '100%' }]} />
+    </View>
+  </ThemedView>
+</View>
 
-        <View style={styles.metricsRow}>
-          {showSplit && (
-            <ThemedView style={styles.metricCardSm}>
-              <ThemedText style={styles.metricLabelSm}>Split (per 500m)</ThemedText>
-              <ThemedText style={styles.metricValueSm}>{splitText}</ThemedText>
-              <View style={styles.progressBarTrackSm}>
-                <View style={[styles.progressBarFill, { width: '100%' }]} />
-              </View>
-            </ThemedView>
-          )}
+{/* Row 2 — Split + Acceleration */}
+<View style={styles.metricsRow}>
+  {showSplit && (
+    <ThemedView style={styles.metricCardSm}>
+      <ThemedText style={styles.metricLabelSm}>Split (per 500m)</ThemedText>
+      <ThemedText style={styles.metricValueSm}>{splitText}</ThemedText>
+      <View style={styles.progressBarTrackSm}>
+        <View style={[styles.progressBarFill, { width: '100%' }]} />
+      </View>
+    </ThemedView>
+  )}
 
-          {showAvgPower && (
-            <ThemedView style={styles.metricCardSm}>
-              <ThemedText style={styles.metricLabelSm}>Average Power</ThemedText>
-              <ThemedText style={styles.metricValueSm}>215 W</ThemedText>
-              <View style={styles.progressBarTrackSm}>
-                <View style={[styles.progressBarFill, { width: '65%' }]} />
-              </View>
-            </ThemedView>
-          )}
-        </View>
+  {showAccelGraph && (
+    <ThemedView style={styles.metricCardSm}>
+      <ThemedText style={styles.metricLabelSm}>Acceleration</ThemedText>
+      <ThemedText style={styles.metricValueSm}>
+        {accelMag.toFixed(2)} m/s²
+      </ThemedText>
+      <View style={styles.progressBarTrackSm}>
+        <View
+          style={[
+            styles.progressBarFill,
+            { width: `${Math.min(accelMag * 10, 100)}%` },
+          ]}
+        />
+      </View>
+    </ThemedView>
+  )}
+</View>
+
+{/* Row 3 — Average Power */}
+<View style={styles.metricsRow}>
+  {showAvgPower && (
+    <ThemedView style={styles.metricCardSm}>
+      <ThemedText style={styles.metricLabelSm}>Average Power</ThemedText>
+      <ThemedText style={styles.metricValueSm}>215 W</ThemedText>
+      <View style={styles.progressBarTrackSm}>
+        <View style={[styles.progressBarFill, { width: '65%' }]} />
+      </View>
+    </ThemedView>
+  )}
+</View>
 
         {/* Live charts */}
         {showAccelGraph && <CurveChart title="Acceleration Over Time" data={accelSeries} />}
