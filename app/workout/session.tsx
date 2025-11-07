@@ -103,7 +103,8 @@ export default function WorkoutSessionScreen() {
   );
 
   // Start “running” when this screen opens (since you navigate here from Start)
-  const [isRunning] = useState(true);
+  const [isRunning, setIsRunning] = useState(true);
+
 
   // --- Integration state ---
   const lastTsRef = useRef<number | null>(null);
@@ -139,14 +140,24 @@ export default function WorkoutSessionScreen() {
   }
 
   // Simple elapsed timer
-  useEffect(() => {
-    if (!isRunning) return;
-    startMsRef.current = Date.now();
-    const id = setInterval(() => {
-      if (startMsRef.current) setElapsedMs(Date.now() - startMsRef.current);
+  // ✅ Improved timer that pauses/resumes without resetting
+useEffect(() => {
+  let interval: ReturnType<typeof setInterval> | null = null;
+
+
+  if (isRunning) {
+    // Resume timing — keep previous elapsed
+    const resumeStart = Date.now() - elapsedMs;
+    interval = setInterval(() => {
+      setElapsedMs(Date.now() - resumeStart);
     }, 250);
-    return () => clearInterval(id);
-  }, [isRunning]);
+  }
+
+  return () => {
+    if (interval) clearInterval(interval);
+  };
+}, [isRunning]);
+
 
   // DeviceMotion listener with smoothing, deadband, ZUPT, damping, scaling
   useEffect(() => {
@@ -226,7 +237,7 @@ export default function WorkoutSessionScreen() {
         // Update acceleration chart (use forward/back signed accel)
         setAccelSeries((prev) => {
           const next = prev.slice(1);
-          next.push(mag); // show fore-aft accel; swap to aMag if you prefer magnitude
+          next.push(mag); // show fore-aft accel; swap to aMag if you prefer magnitude - swapped to mag
           return next;
         });
       });
@@ -264,15 +275,21 @@ export default function WorkoutSessionScreen() {
 
       <ScrollView contentContainerStyle={styles.screen}>
         {/* Top bar */}
-        <View style={styles.topBar}>
-          <Pressable onPress={() => router.back()} hitSlop={12}>
-            <ThemedText style={styles.backArrow}>‹</ThemedText>
-          </Pressable>
-          <ThemedText type="subtitle" style={styles.topTitle} />
-          <Pressable style={styles.chartBtn}>
-            <ThemedText style={styles.chartBtnText}>Chart</ThemedText>
-          </Pressable>
-        </View>
+          <View style={styles.topBar}>
+    <Pressable onPress={() => router.back()} hitSlop={12}>
+      <ThemedText style={styles.backArrow}>‹</ThemedText>
+    </Pressable>
+    <ThemedText type="subtitle" style={styles.topTitle} />
+    <Pressable
+      style={[styles.chartBtn, !isRunning && { backgroundColor: '#F3F3F3' }]}
+      onPress={() => setIsRunning((prev) => !prev)}
+    >
+      <ThemedText style={styles.chartBtnText}>
+        {isRunning ? 'Pause' : 'Resume'}
+      </ThemedText>
+    </Pressable>
+  </View>
+
 
         <View style={styles.divider} />
 
