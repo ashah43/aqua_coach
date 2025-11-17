@@ -1,19 +1,57 @@
 // app/(tabs)/settings.tsx
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
-import React, { useState } from 'react';
-import { Platform, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import {
+  Button,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  View,
+} from 'react-native';
+
+import { signInWithGoogle, signOut } from '@/lib/auth';
+import { supabase } from '@/lib/supabase';
+import type { User } from '@supabase/supabase-js';
 
 export default function SettingsScreen() {
   const [name, setName] = useState('Group 27');
   const [weight, setWeight] = useState('75');
   const [age, setAge] = useState('28');
 
+  const [user, setUser] = useState<User | null>(null);
+
+  // Load current user and subscribe to auth state changes
+  useEffect(() => {
+    let isMounted = true;
+
+    // Get initial user
+    supabase.auth.getUser().then(({ data }) => {
+      if (!isMounted) return;
+      setUser(data?.user ?? null);
+    });
+
+    // Listen for future changes (sign in / sign out)
+    const { data: subscription } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setUser(session?.user ?? null);
+      }
+    );
+
+    return () => {
+      isMounted = false;
+      subscription?.subscription.unsubscribe();
+    };
+  }, []);
+
   return (
     <ScrollView contentContainerStyle={styles.screen}>
       {/* Header */}
       <ThemedView style={styles.header}>
-        <ThemedText type="title" style={styles.title}>Settings</ThemedText>
+        <ThemedText type="title" style={styles.title}>
+          Settings
+        </ThemedText>
         <ThemedText style={styles.subtitle}>Manage your preferences</ThemedText>
       </ThemedView>
 
@@ -60,6 +98,30 @@ export default function SettingsScreen() {
               placeholderTextColor="#A0A6B4"
             />
           </View>
+        </View>
+      </ThemedView>
+
+      {/* Account / Sign-in Card */}
+      <ThemedView style={styles.card}>
+        <View style={styles.cardHeader}>
+          <ThemedText style={styles.cardHeaderIcon}>🔐</ThemedText>
+          <ThemedText style={styles.cardHeaderText}>Account</ThemedText>
+        </View>
+
+        <View style={styles.authSection}>
+          {user ? (
+            <>
+              <ThemedText style={styles.label}>
+                Signed in as {user.email ?? 'your account'}
+              </ThemedText>
+              <Button title="Sign out" onPress={signOut} />
+            </>
+          ) : (
+            <>
+              <ThemedText style={styles.label}>Connect your account</ThemedText>
+              <Button title="Sign in with Google" onPress={signInWithGoogle} />
+            </>
+          )}
         </View>
       </ThemedView>
     </ScrollView>
@@ -123,5 +185,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E3E7EF',
     color: '#0B0E1A',
+  },
+
+  authSection: {
+    marginTop: 8,
+    rowGap: 8,
   },
 });
