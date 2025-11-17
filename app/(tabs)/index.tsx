@@ -1,17 +1,50 @@
 // app/(tabs)/index.tsx
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
-import React from 'react';
+import { supabase } from '@/lib/supabase';
+import type { User } from '@supabase/supabase-js';
+import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
 export default function HomeScreen() {
+  const [user, setUser] = useState<User | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    // Get current user once
+    supabase.auth.getUser().then(({ data }) => {
+      if (!isMounted) return;
+      setUser(data?.user ?? null);
+    });
+
+    // Listen for sign in / sign out changes
+    const { data: subscription } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setUser(session?.user ?? null);
+      }
+    );
+
+    return () => {
+      isMounted = false;
+      subscription?.subscription.unsubscribe();
+    };
+  }, []);
+
+  // Try to get a nice display name, fall back to email, then Group 27
+  const meta = user?.user_metadata as any;
+  const displayName =
+    meta?.full_name || meta?.name || user?.email || '';
+
   return (
     <ScrollView contentContainerStyle={styles.screen}>
       <ThemedView style={styles.header}>
         <ThemedText type="title" style={styles.title}>
           Dashboard
         </ThemedText>
-        <ThemedText style={styles.subtitle}>Welcome Back, Group 27!</ThemedText>
+        <ThemedText style={styles.subtitle}>
+          Welcome Back {displayName}
+        </ThemedText>
       </ThemedView>
 
       <View style={styles.grid}>
@@ -29,9 +62,10 @@ export default function HomeScreen() {
 
         <ThemedView style={styles.card}>
           <ThemedText style={styles.cardLabelTop}>Avg{'\n'}Time</ThemedText>
-          <ThemedText style={styles.cardValue}>32m
+          <ThemedText style={styles.cardValue}>32m</ThemedText>
+          <ThemedText style={styles.cardLabelBottom}>
+            Per{'\n'}Session
           </ThemedText>
-          <ThemedText style={styles.cardLabelBottom}>Per{'\n'}Session</ThemedText>
         </ThemedView>
 
         <ThemedView style={styles.card}>
@@ -106,11 +140,10 @@ const styles = StyleSheet.create({
   },
   cardValue: {
     fontSize: 36,
-    fontWeight: '600',      // lighter than 700 to avoid chunky numerals
-    lineHeight: 40,         // keeps vertical spacing comfy
+    fontWeight: '600',
+    lineHeight: 40,
     marginVertical: 10,
-    letterSpacing: 0,       // remove extra compression
-    // NOTE: intentionally NOT using fontVariant: ['tabular-nums'] to avoid squished digits on iOS
+    letterSpacing: 0,
   },
   cardLabelBottom: {
     fontSize: 15,

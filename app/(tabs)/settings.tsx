@@ -21,6 +21,8 @@ export default function SettingsScreen() {
   const [age, setAge] = useState('28');
 
   const [user, setUser] = useState<User | null>(null);
+  const [loadingProfile, setLoadingProfile] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
 
   // Load current user and subscribe to auth state changes
   useEffect(() => {
@@ -44,6 +46,66 @@ export default function SettingsScreen() {
       subscription?.subscription.unsubscribe();
     };
   }, []);
+
+  // When user changes, load their profile from Supabase
+  useEffect(() => {
+    if (!user) {
+      // If logged out, keep defaults
+      return;
+    }
+
+    const loadProfile = async () => {
+      setLoadingProfile(true);
+      const { data, error } = await supabase
+        .from('profile')
+        .select('name, weight, age')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (error) {
+        console.log('Error loading profile:', error);
+      } else if (data) {
+        setName(data.name ?? 'Group 27');
+        setWeight(
+          data.weight !== null && data.weight !== undefined
+            ? String(data.weight)
+            : '75'
+        );
+        setAge(
+          data.age !== null && data.age !== undefined
+            ? String(data.age)
+            : '28'
+        );
+      }
+      setLoadingProfile(false);
+    };
+
+    loadProfile();
+  }, [user?.id]);
+
+  const handleSaveProfile = async () => {
+    if (!user) {
+      console.log('Must be signed in to save profile');
+      return;
+    }
+
+    setSavingProfile(true);
+
+    const { error } = await supabase.from('profile').upsert({
+      id: user.id, // links to auth.users.id
+      name,
+      weight: weight ? Number(weight) : null,
+      age: age ? Number(age) : null,
+    });
+
+    if (error) {
+      console.log('Error saving profile:', error);
+    } else {
+      console.log('Profile saved!');
+    }
+
+    setSavingProfile(false);
+  };
 
   return (
     <ScrollView contentContainerStyle={styles.screen}>
@@ -99,6 +161,26 @@ export default function SettingsScreen() {
             />
           </View>
         </View>
+
+        {user ? (
+          <View style={styles.saveRow}>
+            <Button
+              title={
+                savingProfile
+                  ? 'Saving...'
+                  : loadingProfile
+                  ? 'Loading...'
+                  : 'Save Profile'
+              }
+              onPress={handleSaveProfile}
+              disabled={savingProfile || loadingProfile}
+            />
+          </View>
+        ) : (
+          <ThemedText style={styles.label}>
+            Sign in below to save your profile.
+          </ThemedText>
+        )}
       </ThemedView>
 
       {/* Account / Sign-in Card */}
@@ -108,7 +190,7 @@ export default function SettingsScreen() {
           <ThemedText style={styles.cardHeaderText}>Account</ThemedText>
         </View>
 
-        <View style={styles.authSection}>
+        <View className="authSection">
           {user ? (
             <>
               <ThemedText style={styles.label}>
@@ -190,5 +272,9 @@ const styles = StyleSheet.create({
   authSection: {
     marginTop: 8,
     rowGap: 8,
+  },
+
+  saveRow: {
+    marginTop: 8,
   },
 });
