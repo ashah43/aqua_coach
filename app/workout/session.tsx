@@ -259,12 +259,14 @@ useEffect(() => {
 
   const splitText = useMemo(() => {
     if (!showSplit) return '';
-    if (distanceM < 1 || elapsedSec === 0) return '—';
+    if (distanceM < 1 || elapsedMs === 0) return '—';
+
     const paceSecPer500 = (elapsedMs / 1000) * (500 / distanceM);
     const mm = Math.floor(paceSecPer500 / 60);
     const ss = Math.floor(paceSecPer500 % 60).toString().padStart(2, '0');
+
     return `${mm}:${ss} /500m`;
-  }, [showSplit, distanceM, elapsedMs, elapsedSec]);
+  }, [showSplit, distanceM, elapsedMs]);
 
   // Placeholder power curve (kept)
   const powerCurve = [6, 10, 18, 26, 20, 14, 10, 22, 30, 20, 12, 18, 14, 26, 24];
