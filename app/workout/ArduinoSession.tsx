@@ -147,8 +147,8 @@ export default function ArduinoSessionScreen() {
           .then((d) => d.discoverAllServicesAndCharacteristics())
           .then((d) => {
             setArduinoDevice(d);
-            const serviceUUID = '180F';
-            const charUUID = '2A19';
+            const serviceUUID = '180F';/////////change this
+            const charUUID = '2A19';///////change thiss
             d.monitorCharacteristicForService(serviceUUID, charUUID, (err, char) => {
               if (char?.value) {
                 const decoded = Buffer.from(char.value, 'base64').toString('ascii');

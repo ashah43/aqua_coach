@@ -6,6 +6,10 @@ import { DeviceMotion, type DeviceMotionMeasurement } from 'expo-sensors';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import Svg, { Line, Path, Rect } from 'react-native-svg';
+import { Buffer } from 'buffer';
+import { BleManager, Device } from 'react-native-ble-plx';
+
+const manager = new BleManager();
 
 const Pill = ({
   label,
@@ -95,6 +99,7 @@ export default function WorkoutSessionScreen() {
   const [distanceM, setDistanceM] = useState(0);
   const [accelMag, setAccelMag] = useState(0);
   const [elapsedMs, setElapsedMs] = useState(0);
+  const [power, setPower] = useState(0); // new: BLE power output
 
   // Realtime acceleration series (forward/back axis) for the chart
   const ACCEL_SAMPLES = 64;
@@ -129,6 +134,37 @@ export default function WorkoutSessionScreen() {
   const STILL_MS = 180;           // ms quiet before zeroing velocity
   const MIN_SPEED = 0.12;         // m/s floor for speed
   const SCALE = 0.18;             // convert speed→meters (feel/calibration)
+
+    // --- Arduino BLE ---
+  const [arduinoDevice, setArduinoDevice] = useState<Device | null>(null);
+
+  useEffect(() => {
+    const scan = manager.startDeviceScan(null, null, (error, device) => {
+      if (error) return;
+      if (device?.name === 'Nano33BLE') {
+        manager.stopDeviceScan();
+        device
+          .connect()
+          .then((d) => d.discoverAllServicesAndCharacteristics())
+          .then((d) => {
+            setArduinoDevice(d);
+            const serviceUUID = 'YOUR_SERVICE_UUID'; // replace
+            const charUUID = 'YOUR_CHAR_UUID'; // replace
+            d.monitorCharacteristicForService(serviceUUID, charUUID, (err, char) => {
+              if (char?.value) {
+                const decoded = Buffer.from(char.value, 'base64').toString('ascii');
+                const newPower = parseFloat(decoded);
+                if (!isNaN(newPower)) setPower(newPower);
+              }
+            });
+          });
+      }
+    });
+
+    return () => {
+      manager.stopDeviceScan();
+    };
+  }, []);
 
   // Permissions (iOS)
   async function ensureMotionPermission() {
@@ -259,14 +295,12 @@ useEffect(() => {
 
   const splitText = useMemo(() => {
     if (!showSplit) return '';
-    if (distanceM < 1 || elapsedMs === 0) return '—';
-
+    if (distanceM < 1 || elapsedSec === 0) return '—';
     const paceSecPer500 = (elapsedMs / 1000) * (500 / distanceM);
     const mm = Math.floor(paceSecPer500 / 60);
     const ss = Math.floor(paceSecPer500 % 60).toString().padStart(2, '0');
-
     return `${mm}:${ss} /500m`;
-  }, [showSplit, distanceM, elapsedMs]);
+  }, [showSplit, distanceM, elapsedMs, elapsedSec]);
 
 
   // Placeholder power curve (kept)
@@ -374,18 +408,16 @@ useEffect(() => {
   )}
 </View>
 
-{/* Row 3 — Average Power */}
+{/* Row 3 —  Power per stroke*/}
 <View style={styles.metricsRow}>
-  {showAvgPower && (
-    <ThemedView style={styles.metricCardSm}>
-      <ThemedText style={styles.metricLabelSm}>Average Power</ThemedText>
-      <ThemedText style={styles.metricValueSm}>215 W</ThemedText>
-      <View style={styles.progressBarTrackSm}>
-        <View style={[styles.progressBarFill, { width: '65%' }]} />
-      </View>
-    </ThemedView>
-  )}
-</View>
+          {showAvgPower && (
+            <ThemedView style={styles.metricCardSm}>
+              <ThemedText style={styles.metricLabelSm}>Power</ThemedText>
+              <ThemedText style={styles.metricValueSm}>{power.toFixed(0)} W</ThemedText>
+              <View style={styles.progressBarTrackSm}><View style={[styles.progressBarFill, { width: `${Math.min(power / 300 * 100, 100)}%` }]} /></View>
+            </ThemedView>
+          )}
+        </View>
 
         {/* Live charts */}
         {showAccelGraph && <CurveChart title="Acceleration Over Time" data={accelSeries} />}
