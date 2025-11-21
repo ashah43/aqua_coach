@@ -107,6 +107,18 @@ export default function WorkoutSessionScreen() {
     Array(ACCEL_SAMPLES).fill(0)
   );
 
+  //realtime power
+  const POWER_SAMPLES = 64;
+const [powerSeries, setPowerSeries] = useState<number[]>(Array(POWER_SAMPLES).fill(0));
+
+useEffect(() => {
+  setPowerSeries((prev) => {
+    const next = prev.slice(1);
+    next.push(power); // add latest power reading
+    return next;
+  });
+}, [power]);
+
   // Start “running” when this screen opens (since you navigate here from Start)
   const [isRunning, setIsRunning] = useState(true);
 
@@ -135,36 +147,72 @@ export default function WorkoutSessionScreen() {
   const MIN_SPEED = 0.12;         // m/s floor for speed
   const SCALE = 0.18;             // convert speed→meters (feel/calibration)
 
-    // --- Arduino BLE ---
-  const [arduinoDevice, setArduinoDevice] = useState<Device | null>(null);
+ 
+  // --- Arduino BLE ---
+const [arduinoDevice, setArduinoDevice] = useState<Device | null>(null);
+const [bleStatus, setBleStatus] = useState<string>('Scanning for device...');
 
-  useEffect(() => {
-    const scan = manager.startDeviceScan(null, null, (error, device) => {
-      if (error) return;
-      if (device?.name === 'Nano33BLE') {
-        manager.stopDeviceScan();
-        device
-          .connect()
-          .then((d) => d.discoverAllServicesAndCharacteristics())
-          .then((d) => {
-            setArduinoDevice(d);
-            const serviceUUID = 'YOUR_SERVICE_UUID'; // replace
-            const charUUID = 'YOUR_CHAR_UUID'; // replace
-            d.monitorCharacteristicForService(serviceUUID, charUUID, (err, char) => {
-              if (char?.value) {
-                const decoded = Buffer.from(char.value, 'base64').toString('ascii');
-                const newPower = parseFloat(decoded);
-                if (!isNaN(newPower)) setPower(newPower);
-              }
-            });
-          });
+useEffect(() => {
+  const scan = manager.startDeviceScan(null, null, (error, device) => {
+    console.log('Searching for device');
+    if (error) {
+      console.log('Scan error:', error);
+      setBleStatus('Scan failed. Try again.');
+      return;
+    }
+
+    if (device?.name === 'RowingIMU') {
+      setBleStatus('Device found! Connecting...');
+      manager.stopDeviceScan();
+
+      device
+        .connect()
+        .then((d) => {
+            console.log('Connected to board:');
+          setBleStatus('Connected! Discovering services...');
+          return d.discoverAllServicesAndCharacteristics();
+        })
+        .then((d) => {
+          setBleStatus('Services discovered! Listening for data...');
+          setArduinoDevice(d);
+          const serviceUUID = '12345678-1234-5678-1234-56789abcdef0'; // replace
+          const charUUID = '12345678-1234-5678-1234-56789abcdef1'; // replace
+
+          d.monitorCharacteristicForService(serviceUUID, charUUID, (err, char) => {
+      if (err) {
+        console.log('Characteristic error:', err);
+        setBleStatus('Error reading data.');
+        return;
+      }
+      if (char?.value) {
+        const data = Buffer.from(char.value, 'base64');
+        const packetID = data[0];
+        let newPower = 0;
+
+        if (data.length >= 3) {
+          newPower = data.readUInt16LE(1);
+        }
+
+        if (!isNaN(newPower)) {
+          setPower(newPower);
+        }
+
+        console.log(`Packet ${packetID} Power:`, newPower);
       }
     });
+  })
+        .catch((err) => {
+          console.log('Connection error:', err);
+          setBleStatus('Connection failed. Try again.');
+        });
+    }
+  });
 
-    return () => {
-      manager.stopDeviceScan();
-    };
-  }, []);
+  return () => {
+    manager.stopDeviceScan();
+  };
+}, []);
+
 
   // Permissions (iOS)
   async function ensureMotionPermission() {
@@ -304,13 +352,20 @@ useEffect(() => {
 
 
   // Placeholder power curve (kept)
-  const powerCurve = [6, 10, 18, 26, 20, 14, 10, 22, 30, 20, 12, 18, 14, 26, 24];
+  //const powerCurve = [6, 10, 18, 26, 20, 14, 10, 22, 30, 20, 12, 18, 14, 26, 24];
 
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
 
       <ScrollView contentContainerStyle={styles.screen}>
+         {/* BLE status at the top */}
+  {!arduinoDevice && (
+    <ThemedView style={styles.bleStatusContainer}>
+      <ThemedText style={styles.bleStatusText}>{bleStatus}</ThemedText>
+    </ThemedView>
+  )}
+
         {/* Top bar */}
           <View style={styles.topBar}>
     <Pressable onPress={() => router.back()} hitSlop={12}>
@@ -421,7 +476,8 @@ useEffect(() => {
 
         {/* Live charts */}
         {showAccelGraph && <CurveChart title="Acceleration Over Time" data={accelSeries} />}
-        {showPowerGraph && <CurveChart title="Power Over Time" data={powerCurve} />}
+        {showPowerGraph && <CurveChart title="Power Over Time" data={powerSeries} />}
+
 
         <View style={{ height: 28 }} />
       </ScrollView>
@@ -501,4 +557,17 @@ const styles = StyleSheet.create({
   },
   chartTitle: { textAlign: 'center', fontSize: 16, marginBottom: 12, fontWeight: '600' },
   chartArea: { height: 180, borderRadius: 14, overflow: 'hidden' },
+
+  bleStatusContainer: {
+  padding: 12,
+  marginBottom: 10,
+  borderRadius: 8,
+  backgroundColor: '#FFF3E0',
+  alignItems: 'center',
+},
+bleStatusText: {
+  color: '#E65100',
+  fontWeight: '600',
+},
+
 });
