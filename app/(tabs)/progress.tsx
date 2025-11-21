@@ -1,93 +1,167 @@
 // app/(tabs)/progress.tsx
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
-import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { supabase } from '@/lib/supabase';
+import type { User } from '@supabase/supabase-js';
+import { useEffect, useState } from 'react';
+import { ScrollView, StyleSheet, View } from 'react-native';
 
-const RangePill = ({
-  label,
-  active,
-  onPress,
-}: {
-  label: string;
-  active?: boolean;
-  onPress?: () => void;
-}) => (
-  <Pressable onPress={onPress} style={[styles.pill, active && styles.pillActive]}>
-    <ThemedText style={[styles.pillText, active && styles.pillTextActive]}>{label}</ThemedText>
-  </Pressable>
-);
+type WorkoutRow = {
+  id: string;
+  user_id: string;
+  started_at: string | null;
+  ended_at: string | null;
+  duration_seconds: number | null;
+  distance_m: number | null;
+  avg_power_w: number | null;
+  created_at: string | null;
+};
 
 export default function ProgressScreen() {
-  const [range, setRange] = useState<'Week' | 'Month' | 'All'>('Week');
-  const bars = [10, 22, 16, 28, 20, 32, 18, 26, 14, 24, 12, 30];
+  const [user, setUser] = useState<User | null>(null);
+  const [lastWorkout, setLastWorkout] = useState<WorkoutRow | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Load current user once and subscribe to auth changes
+  useEffect(() => {
+    let isMounted = true;
+
+    supabase.auth.getUser().then(({ data }) => {
+      if (!isMounted) return;
+      setUser(data?.user ?? null);
+    });
+
+    const { data: subscription } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setUser(session?.user ?? null);
+      }
+    );
+
+    return () => {
+      isMounted = false;
+      subscription?.subscription.unsubscribe();
+    };
+  }, []);
+
+  // When user changes, load their last workout
+  useEffect(() => {
+    if (!user) {
+      setLastWorkout(null);
+      setLoading(false);
+      return;
+    }
+
+    const fetchLastWorkout = async () => {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('workouts')
+        .select(
+          'id, user_id, started_at, ended_at, duration_seconds, distance_m, avg_power_w, created_at'
+        )
+        .eq('user_id', user.id)
+        .order('started_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        console.log('Error loading last workout:', error);
+        setLastWorkout(null);
+      } else {
+        setLastWorkout(data);
+      }
+      setLoading(false);
+    };
+
+    fetchLastWorkout();
+  }, [user?.id]);
+
+  const formatDateTime = (iso: string | null) => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return d.toLocaleString();
+  };
+
+  const formatDuration = (seconds: number | null) => {
+    if (!seconds || seconds <= 0) return '—';
+    const mm = Math.floor(seconds / 60);
+    const ss = (seconds % 60).toString().padStart(2, '0');
+    return `${mm}:${ss}`;
+  };
+
+  const distanceMeters = lastWorkout?.distance_m ?? null;
+  const distanceKm =
+    distanceMeters != null ? (distanceMeters / 1000).toFixed(2) : null;
+
+  const avgPower =
+    lastWorkout?.avg_power_w != null
+      ? `${lastWorkout.avg_power_w.toFixed(0)} W`
+      : '—';
+
+  let subtitle = '';
+  if (loading) {
+    subtitle = 'Loading your last workout...';
+  } else if (!user) {
+    subtitle = 'Sign in to see your saved workouts.';
+  } else if (!lastWorkout) {
+    subtitle = 'No workouts saved yet. Start a session to log one!';
+  } else {
+    subtitle = `Last workout on ${formatDateTime(lastWorkout.started_at)}`;
+  }
 
   return (
     <ScrollView contentContainerStyle={styles.screen}>
-      {/* Hero */}
+      {/* Hero: Last workout summary */}
       <ThemedView style={styles.hero}>
-        <ThemedText type="title" style={styles.title}>Progress</ThemedText>
-        <ThemedText style={styles.subtitle}>Track Your Rowing Performance</ThemedText>
-
-        <View style={styles.pillsRow}>
-          {(['Week', 'Month', 'All'] as const).map(p => (
-            <RangePill key={p} label={p} active={range === p} onPress={() => setRange(p)} />
-          ))}
-        </View>
+        <ThemedText type="title" style={styles.title}>
+          Last Workout
+        </ThemedText>
+        <ThemedText style={styles.subtitle}>{subtitle}</ThemedText>
       </ThemedView>
 
-      {/* Top stats */}
-      <View style={styles.topRow}>
-        <ThemedView style={styles.statCard}>
-          <ThemedText style={styles.cardLabelTop}>Total Distance</ThemedText>
-          <ThemedText style={styles.bigValue}>0.0 km</ThemedText>
-          <ThemedText style={styles.cardLabelBottom}>0 m total</ThemedText>
-        </ThemedView>
+      {/* Only show details if we actually have a workout */}
+      {lastWorkout && (
+        <>
+          {/* Top row: Distance + Duration */}
+          <View style={styles.topRow}>
+            <ThemedView style={styles.statCard}>
+              <ThemedText style={styles.cardLabelTop}>Distance</ThemedText>
+              <ThemedText style={styles.bigValue}>
+                {distanceKm ?? '—'} km
+              </ThemedText>
+              <ThemedText style={styles.cardLabelBottom}>
+                {distanceMeters != null
+                  ? `${distanceMeters.toFixed(0)} m total`
+                  : 'No distance recorded'}
+              </ThemedText>
+            </ThemedView>
 
-        <ThemedView style={styles.statCard}>
-          <ThemedText style={styles.cardLabelTop}>Total Sessions</ThemedText>
-          <ThemedText style={styles.bigValue}>0</ThemedText>
-          <ThemedText style={styles.cardLabelBottom}>Workouts Completed</ThemedText>
-        </ThemedView>
-      </View>
-
-      {/* Trend chart */}
-      <ThemedView style={styles.chartCard}>
-        <View style={styles.chartHeader}>
-          <ThemedText style={styles.chartTitle}>Distance Trend</ThemedText>
-          <ThemedText style={styles.chartSubTitle}>
-            {range === 'Week' ? 'This Week' : range === 'Month' ? 'This Month' : 'All Time'}
-          </ThemedText>
-        </View>
-
-        <View style={styles.chartArea}>
-          {Array.from({ length: 4 }).map((_, i) => (
-            <View key={`h-${i}`} style={[styles.gridH, { top: 18 + i * 36 }]} />
-          ))}
-          {Array.from({ length: 5 }).map((_, i) => (
-            <View key={`v-${i}`} style={[styles.gridV, { left: 18 + i * 62 }]} />
-          ))}
-
-          <View style={styles.barsRow}>
-            {bars.map((h, idx) => (
-              <View key={idx} style={[styles.bar, { height: 12 + h }]} />
-            ))}
+            <ThemedView style={styles.statCard}>
+              <ThemedText style={styles.cardLabelTop}>Duration</ThemedText>
+              <ThemedText style={styles.bigValue}>
+                {formatDuration(lastWorkout.duration_seconds)}
+              </ThemedText>
+              <ThemedText style={styles.cardLabelBottom}>
+                Started at {formatDateTime(lastWorkout.started_at)}
+              </ThemedText>
+            </ThemedView>
           </View>
-        </View>
-      </ThemedView>
 
-      {/* Secondary stats */}
-      <View style={styles.bottomRow}>
-        <ThemedView style={styles.smallCard}>
-          <ThemedText style={styles.smallLabel}>Best Power</ThemedText>
-          <ThemedText style={styles.smallValue}>— W</ThemedText>
-        </ThemedView>
+          {/* Bottom row: Avg power + End time */}
+          <View style={styles.bottomRow}>
+            <ThemedView style={styles.smallCard}>
+              <ThemedText style={styles.smallLabel}>Avg Power</ThemedText>
+              <ThemedText style={styles.smallValue}>{avgPower}</ThemedText>
+            </ThemedView>
 
-        <ThemedView style={styles.smallCard}>
-          <ThemedText style={styles.smallLabel}>Avg SPM</ThemedText>
-          <ThemedText style={styles.smallValue}>—</ThemedText>
-        </ThemedView>
-      </View>
+            <ThemedView style={styles.smallCard}>
+              <ThemedText style={styles.smallLabel}>Ended At</ThemedText>
+              <ThemedText style={styles.smallValue}>
+                {formatDateTime(lastWorkout.ended_at)}
+              </ThemedText>
+            </ThemedView>
+          </View>
+        </>
+      )}
     </ScrollView>
   );
 }
@@ -105,7 +179,7 @@ const styles = StyleSheet.create({
   hero: {
     backgroundColor: '#FFFFFF',
     borderRadius: R + 4,
-    paddingVertical: 20,         // +2 for a touch more air
+    paddingVertical: 20,
     paddingHorizontal: 20,
     borderWidth: 1,
     borderColor: '#EEF1F5',
@@ -117,18 +191,6 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 28, marginBottom: 6 },
   subtitle: { fontSize: 16, opacity: 0.75 },
-  pillsRow: { marginTop: 12, flexDirection: 'row', gap: 8 },
-  pill: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#D9DDE4',
-    backgroundColor: '#FFFFFF',
-  },
-  pillActive: { backgroundColor: '#0B0E1A', borderColor: '#0B0E1A' },
-  pillText: { fontSize: 14, opacity: 0.85 },
-  pillTextActive: { color: '#FFFFFF', fontWeight: '600', opacity: 1 },
 
   topRow: {
     flexDirection: 'row',
@@ -139,7 +201,7 @@ const styles = StyleSheet.create({
     width: '48%',
     backgroundColor: '#FFFFFF',
     borderRadius: R,
-    paddingVertical: 20,         // +2
+    paddingVertical: 20,
     paddingHorizontal: 16,
     borderWidth: 1,
     borderColor: '#E8EAF0',
@@ -150,8 +212,6 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   cardLabelTop: { fontSize: 15, opacity: 0.6, marginBottom: 6 },
-
-  // >>> Key change: lighter weight + explicit lineHeight + no negative letterSpacing
   bigValue: {
     fontSize: 30,
     fontWeight: '600',
@@ -159,68 +219,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     letterSpacing: 0,
   },
-
   cardLabelBottom: { fontSize: 15, opacity: 0.6 },
-
-  chartCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: R,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E8EAF0',
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 2,
-  },
-  chartHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'baseline',
-    marginBottom: 10,
-  },
-  chartTitle: { fontSize: 16, fontWeight: '700' },
-  chartSubTitle: { fontSize: 13, opacity: 0.6 },
-
-  chartArea: {
-    height: 190,
-    borderRadius: 14,
-    backgroundColor: '#F7F8FB',
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  gridH: {
-    position: 'absolute',
-    left: 14,
-    right: 14,
-    height: 1,
-    backgroundColor: '#E6EAF2',
-  },
-  gridV: {
-    position: 'absolute',
-    top: 14,
-    bottom: 14,
-    width: 1,
-    backgroundColor: '#E6EAF2',
-  },
-  barsRow: {
-    position: 'absolute',
-    left: 24,
-    right: 24,
-    bottom: 18,
-    top: 28,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-  },
-  bar: {
-    width: 12,
-    borderTopLeftRadius: 6,
-    borderTopRightRadius: 6,
-    backgroundColor: '#0B0E1A',
-    opacity: 0.9,
-  },
 
   bottomRow: {
     flexDirection: 'row',
@@ -243,9 +242,9 @@ const styles = StyleSheet.create({
   },
   smallLabel: { fontSize: 15, opacity: 0.6, marginBottom: 6 },
   smallValue: {
-    fontSize: 20,
-    fontWeight: '600',   // lighter weight to avoid squish
-    lineHeight: 24,
+    fontSize: 18,
+    fontWeight: '600',
+    lineHeight: 22,
     letterSpacing: 0,
   },
 });
