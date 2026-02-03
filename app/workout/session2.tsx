@@ -9,6 +9,9 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { BleManager, Device } from 'react-native-ble-plx';
 import Svg, { Line, Path, Rect } from 'react-native-svg';
 
+//adding pacer audio
+
+
 const manager = new BleManager();
 
 const Pill = ({
@@ -34,12 +37,12 @@ function useSmoothPath(
   padY = 16
 ) {
   return useMemo(() => {
-    if (!data || data.length === 0) return '';
+    if (!data.length) return '';
     const w = width - padX * 2;
     const h = height - padY * 2;
     const min = Math.min(...data);
     const max = Math.max(...data);
-    const range = Math.max(1e-6, max - min);
+    const range = Math.max(1e-3, max - min);
 
     const xs: number[] = [];
     const ys: number[] = [];
@@ -61,7 +64,8 @@ function useSmoothPath(
   }, [data, width, height, padX, padY]);
 }
 
-function CurveChart({ title, data }: { title: string; data: number[] }) {
+
+/*unction CurveChart({ title, data }: { title: string; data: number[] }) {
   const WIDTH = 320;
   const HEIGHT = 180;
   const path = useSmoothPath(data, WIDTH, HEIGHT);
@@ -78,17 +82,49 @@ function CurveChart({ title, data }: { title: string; data: number[] }) {
           {[0, 1, 2, 3, 4].map((i) => (
             <Line key={`v-${i}`} y1={16} y2={HEIGHT - 16} x1={16 + i * 64} x2={16 + i * 64} stroke="#E6EAF2" strokeWidth={1} />
           ))}
-          {path && data.length > 0 && (
-            <>
-              <Path d={`${path} L ${WIDTH - 16} ${HEIGHT - 16} L ${16} ${HEIGHT - 16} Z`} fill="rgba(11,14,26,0.06)" />
-              <Path d={path} stroke="#0B0E1A" strokeWidth={2.5} fill="none" />
-            </>
-          )}
+          <Path d={`${path} L ${WIDTH - 16} ${HEIGHT - 16} L ${16} ${HEIGHT - 16} Z`} fill="rgba(11,14,26,0.06)" />
+          <Path d={path} stroke="#0B0E1A" strokeWidth={2.5} fill="none" />
         </Svg>
       </View>
     </ThemedView>
   );
 }
+*/
+
+function CurveChart({ title, data, baseline }: { title: string; data: number[]; baseline?: number[] }) {
+  const WIDTH = 320;
+  const HEIGHT = 180;
+  const path = useSmoothPath(data, WIDTH, HEIGHT);
+  const baselinePath = baseline ? useSmoothPath(baseline, WIDTH, HEIGHT) : '';
+
+  return (
+    <ThemedView style={styles.chartCard}>
+      <ThemedText style={styles.chartTitle}>{title}</ThemedText>
+      <View style={styles.chartArea}>
+        <Svg width="100%" height="100%" viewBox={`0 0 ${WIDTH} ${HEIGHT}`}>
+          <Rect x={0} y={0} width={WIDTH} height={HEIGHT} rx={12} fill="#F7F8FB" />
+          {[0, 1, 2, 3].map((i) => (
+            <Line key={`h-${i}`} x1={16} x2={WIDTH - 16} y1={16 + i * 36} y2={16 + i * 36} stroke="#E6EAF2" strokeWidth={1} />
+          ))}
+          {/* Vertical grid lines: 1-second intervals (40 samples = 4 seconds, so 10 samples per second, 72px per second) */}
+          {[0, 1, 2, 3, 4].map((i) => (
+            <Line key={`v-${i}`} y1={16} y2={HEIGHT - 16} x1={16 + i * 72} x2={16 + i * 72} stroke="#E6EAF2" strokeWidth={1} />
+          ))}
+
+          {/* baseline first */}
+          {baseline && <Path d={baselinePath} stroke="rgba(200,0,0,0.3)" strokeWidth={2} fill="none" />}
+
+          {/* live data */}
+          <Path d={`${path} L ${WIDTH - 16} ${HEIGHT - 16} L ${16} ${HEIGHT - 16} Z`} fill="rgba(11,14,26,0.06)" />
+          <Path d={path} stroke="#0B0E1A" strokeWidth={2.5} fill="none" />
+        </Svg>
+      </View>
+    </ThemedView>
+  );
+}
+
+
+
 
 export default function WorkoutSessionScreen() {
   const router = useRouter();
@@ -99,6 +135,12 @@ export default function WorkoutSessionScreen() {
   const [showSplit, setShowSplit] = useState(true);
   const [showAvgPower, setShowAvgPower] = useState(true);
 
+
+  //adding UI toggle for selecting a pace you want to workout at
+  const [showSplitOptions, setShowSplitOptions] = useState(false);
+  const [selectedSplit, setSelectedSplit] = useState('2:00'); // default
+
+
   // Live metrics
   const [distanceM, setDistanceM] = useState(0);
   const [accelMag, setAccelMag] = useState(0);
@@ -106,22 +148,122 @@ export default function WorkoutSessionScreen() {
   const [power, setPower] = useState(0); // new: BLE power output
 
   // Realtime acceleration series (forward/back axis) for the chart
-  const ACCEL_SAMPLES = 64;
+  // 40 samples × 100ms = 4 seconds (enough to show a complete rowing stroke at slower speeds)
+  const ACCEL_SAMPLES = 40;
   const [accelSeries, setAccelSeries] = useState<number[]>(
     Array(ACCEL_SAMPLES).fill(0)
   );
 
   //realtime power
-  const POWER_SAMPLES = 64;
-const [powerSeries, setPowerSeries] = useState<number[]>(Array(POWER_SAMPLES).fill(0));
+  const POWER_SAMPLES = 40;
+  const [powerSeries, setPowerSeries] = useState<number[]>(Array(POWER_SAMPLES).fill(0));
 
+  // Baseline stroke curve (ideal acceleration for current pace)
+const [baselineSeries, setBaselineSeries] = useState<number[]>(Array(ACCEL_SAMPLES).fill(0));
+
+// Generate ideal baseline based on pace
+// Define the ideal curves per pace
+const idealCurves: { pace: string; strokeRate: number; manpower: number }[] = [
+  { pace: '2:00', strokeRate: 30, manpower: 350 },
+  { pace: '2:30', strokeRate: 25, manpower: 300 },
+  { pace: '3:00', strokeRate: 20, manpower: 250 },
+];
+
+//pacer
+const [isPacerOn, setIsPacerOn] = useState(false);
+const pacerIntervalRef = useRef<number | null>(null);
+
+
+/*
+//adding a pacer function
+async function playTick() {
+  try {
+    // small haptic (never fails)
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    // optional: beep sound
+    const { sound } = await Audio.Sound.createAsync(
+      require('@/assets/pacer-beep.wav')
+    );
+    await sound.playAsync();
+    setTimeout(() => sound.unloadAsync(), 500);
+  } catch (err) {
+    console.log("Pacer error:", err);
+  }
+}
+  */
+
+// Generate ideal acceleration curve from stroke rate
+function generateIdealCurve(strokeRate: number, samples: number = 40): number[] {
+  const curve: number[] = [];
+  const strokeDuration = 60 / strokeRate; // seconds per stroke
+  const samplesPerStroke = (strokeDuration / 4) * samples; // quarter strokes for phases
+
+  for (let i = 0; i < samples; i++) {
+    const positionInStroke = (i % samplesPerStroke) / samplesPerStroke;
+
+    if (positionInStroke < 0.25) {
+      const t = positionInStroke / 0.25;
+      curve.push(0.3 + 2.2 * t * t); // acceleration ramps up
+    } else if (positionInStroke < 0.35) {
+      curve.push(2.8); // peak
+    } else if (positionInStroke < 0.5) {
+      const t = (positionInStroke - 0.35) / 0.15;
+      curve.push(2.8 - 2.0 * t); // deceleration
+    } else if (positionInStroke < 0.6) {
+      const t = (positionInStroke - 0.5) / 0.1;
+      curve.push(0.8 - 1.2 * t); // follow-through
+    } else {
+      const t = (positionInStroke - 0.6) / 0.4;
+      curve.push(-0.4 - 0.3 * t); // recovery
+    }
+  }
+
+  return curve;
+}
+
+// Hook to update baselineSeries whenever the pace changes
 useEffect(() => {
-  setPowerSeries((prev) => {
-    const next = prev.slice(1);
-    next.push(power); // add latest power reading
-    return next;
-  });
-}, [power]);
+  const paceObj = idealCurves.find((c) => c.pace === selectedSplit);
+  if (!paceObj) return;
+
+  const newBaseline = generateIdealCurve(paceObj.strokeRate, ACCEL_SAMPLES);
+  setBaselineSeries(newBaseline);
+}, [selectedSplit]);
+
+
+//Hook to start and stop the metronome
+useEffect(() => {
+  if (!isPacerOn) {
+    if (pacerIntervalRef.current) clearInterval(pacerIntervalRef.current);
+    pacerIntervalRef.current = null;
+    return;
+  }
+
+  const paceObj = idealCurves.find(p => p.pace === selectedSplit);
+  if (!paceObj) return;
+
+  const intervalMs = 60000 / paceObj.strokeRate; // ms per stroke
+
+  /*if (pacerIntervalRef.current) clearInterval(pacerIntervalRef.current);
+  pacerIntervalRef.current = setInterval(() => {
+    playTick();
+  }, intervalMs);
+*/
+  return () => {
+    if (pacerIntervalRef.current) clearInterval(pacerIntervalRef.current);
+    pacerIntervalRef.current = null;
+  };
+}, [isPacerOn, selectedSplit]);
+
+
+  useEffect(() => {
+    setPowerSeries((prev) => {
+      const next = prev.slice(1);
+      next.push(power); // add latest power reading
+      return next;
+    });
+  }, [power]);
 
   // Start “running” when this screen opens (since you navigate here from Start)
   const [isRunning, setIsRunning] = useState(true);
@@ -142,7 +284,7 @@ useEffect(() => {
   const stillAccumRef = useRef(0);
 
   // --- Tuning constants (adjust to taste) ---
-  const SAMPLE_MS = 50;           // 20 Hz
+  const SAMPLE_MS = 100;           // 20 Hz
   const ACC_DEADBAND = 0.08;      // m/s^2 ignore tiny accel
   const LPF_ALPHA = 0.85;         // low-pass smoothing (higher = smoother)
   const DAMP = 0.92;              // velocity decay
@@ -155,68 +297,66 @@ useEffect(() => {
   // --- Arduino BLE ---
 const [arduinoDevice, setArduinoDevice] = useState<Device | null>(null);
 const [bleStatus, setBleStatus] = useState<string>('Scanning for device...');
-
+  
 useEffect(() => {
-  const scan = manager.startDeviceScan(null, null, (error, device) => {
-    console.log('Searching for device');
-    if (error) {
-      console.log('Scan error:', error);
-      setBleStatus('Scan failed. Try again.');
-      return;
-    }
+  const SERVICE_UUID = '12345678-1234-5678-1234-56789abcdef0';
 
-    if (device?.name === 'rowingtest') {
-      setBleStatus('Device found! Connecting...');
-      manager.stopDeviceScan();
+  const subscription = manager.startDeviceScan(
+    [SERVICE_UUID],
+    { allowDuplicates: false },
+    (error, device) => {
 
-      device
-        .connect()
-        .then((d) => {
-            console.log('Connected to board:');
-          setBleStatus('Connected! Discovering services...');
-          return d.discoverAllServicesAndCharacteristics();
-        })
-        .then((d) => {
-          setBleStatus('Services discovered! Listening for data...');
-          setArduinoDevice(d);
-          const serviceUUID = '12345678-1234-5678-1234-56789abcdef0'; 
-          const charUUID = 'abcdefab-cdef-1234-5678-1234567890ab'; 
-
-          d.monitorCharacteristicForService(serviceUUID, charUUID, (err, char) => {
-      if (err) {
-        console.log('Characteristic error:', err);
-        setBleStatus('Error reading data.');
+      if (error) {
+        console.log('Scan error:', error);
+        setBleStatus('Scan failed');
         return;
       }
-      if (char?.value) {
-        const data = Buffer.from(char.value, 'base64');
-        const packetID = data[0];
-        let newPower = 0;
 
-        if (data.length >= 3) {
-          newPower = data.readUInt16LE(1);
-        }
+      if (!device) return;
 
-        if (!isNaN(newPower)) {
-          setPower(newPower);
-        }
+      console.log('Found:', device.name, device.id);
 
-        console.log(`Packet ${packetID} Power:`, newPower);
-      }
-    });
-  })
-        .catch((err) => {
+      setBleStatus('Arduino found! Connecting...');
+      manager.stopDeviceScan();
+
+      device.connect()
+        .then(d => d.discoverAllServicesAndCharacteristics())
+        .then(d => {
+
+          setArduinoDevice(d);
+          setBleStatus('Connected! Listening...');
+
+          return d.monitorCharacteristicForService(
+            SERVICE_UUID,
+            'abcdefab-cdef-1234-5678-1234567890ab',
+            (err, char) => {
+
+              if (err) {
+                console.log('Notify error:', err);
+                return;
+              }
+
+              if (!char?.value) return;
+
+              const data = Buffer.from(char.value, 'base64');
+              const newPower = data.readUInt16LE(0);
+
+              console.log('Power:', newPower);
+              setPower(newPower);
+            }
+          );
+        })
+        .catch(err => {
           console.log('Connection error:', err);
-          setBleStatus('Connection failed. Try again.');
+          setBleStatus('Connection failed');
         });
     }
-  });
+  );
 
   return () => {
     manager.stopDeviceScan();
   };
 }, []);
-
 
   // Permissions (iOS)
   async function ensureMotionPermission() {
@@ -227,8 +367,11 @@ useEffect(() => {
     }
   }
 
+
+
+
   // Simple elapsed timer
-  // ✅ Improved timer that pauses/resumes without resetting
+  // Improved timer that pauses/resumes without resetting
 useEffect(() => {
   let interval: ReturnType<typeof setInterval> | null = null;
 
@@ -348,11 +491,14 @@ useEffect(() => {
   const splitText = useMemo(() => {
     if (!showSplit) return '';
     if (distanceM < 1 || elapsedSec === 0) return '—';
-    const paceSecPer500 = (elapsedMs / 1000) * (500 / distanceM);
-    const mm = Math.floor(paceSecPer500 / 60);
-    const ss = Math.floor(paceSecPer500 % 60).toString().padStart(2, '0');
+    // Calculate split: time per 500m
+    const paceSecPer500 = elapsedSec * (500 / distanceM);
+    // Cap at reasonable maximum (10:00 per 500m) to avoid showing unrealistic values
+    const cappedPace = Math.min(paceSecPer500, 600); // 600 seconds = 10 minutes
+    const mm = Math.floor(cappedPace / 60);
+    const ss = Math.floor(cappedPace % 60).toString().padStart(2, '0');
     return `${mm}:${ss} /500m`;
-  }, [showSplit, distanceM, elapsedMs, elapsedSec]);
+  }, [showSplit, distanceM, elapsedSec]);
 
 
   // Placeholder power curve (kept)
@@ -411,6 +557,41 @@ useEffect(() => {
     active={showPowerGraph}
     onPress={() => setShowPowerGraph((v) => !v)}
   />
+  <Pill
+    label={isPacerOn ? `Pacer: ${selectedSplit}` : 'Pacer'}
+    active={isPacerOn || showSplitOptions}
+    onPress={() => {
+      if (showSplitOptions) {
+        setShowSplitOptions(false);
+        return;
+      }
+      if (isPacerOn) {
+        setIsPacerOn(false);
+        setShowSplitOptions(false);
+        return;
+      }
+      setShowSplitOptions(true);
+    }}
+  />
+  {showSplitOptions && (
+  <View style={{ flexDirection: 'row', gap: 8, marginTop: 6 }}>
+    {['2:00', '2:30', '3:00'].map((opt) => (
+      <Pill
+        key={opt}
+        label={opt}
+        active={selectedSplit === opt}
+        onPress={() => {
+          setSelectedSplit(opt);
+          setIsPacerOn(true);
+          setShowSplitOptions(false); // hide options after selecting
+        }}
+      />
+    ))}
+  </View>
+  
+)}
+
+
 </View>
 
 {/* Metrics */}
@@ -479,7 +660,7 @@ useEffect(() => {
         </View>
 
         {/* Live charts */}
-        {showAccelGraph && <CurveChart title="Acceleration Over Time" data={accelSeries} />}
+        {showAccelGraph && <CurveChart title="Acceleration Over Time" data={accelSeries} baseline={baselineSeries} />}
         {showPowerGraph && <CurveChart title="Power Over Time" data={powerSeries} />}
 
 

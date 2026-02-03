@@ -10,7 +10,11 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.rowing"
+      "bundleIdentifier": "com.kaylahall.rowing",
+      "infoPlist": {
+        "NSBluetoothAlwaysUsageDescription": "App needs Bluetooth to connect to Arduino",
+        "NSBluetoothPeripheralUsageDescription": "App needs Bluetooth to connect to Arduino"
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -21,8 +25,12 @@
       "permissions": [
         "android.permission.BLUETOOTH",
         "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
         "android.permission.BLUETOOTH_CONNECT"
-      ]
+      ],
+      "package": "com.kaylahall.rowing"
     },
     "web": {
       "bundler": "metro",

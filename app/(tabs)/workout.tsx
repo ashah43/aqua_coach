@@ -2,7 +2,6 @@
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { useRouter } from 'expo-router';
-import React from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 export default function WorkoutScreen() {
@@ -46,7 +45,7 @@ export default function WorkoutScreen() {
 
       <Pressable
         style={({ pressed }) => [styles.cta, pressed && { transform: [{ scale: 0.98 }] }]}
-        onPress={() => router.push('/workout/session')}
+        onPress={() => router.push('/workout/session2')}
         hitSlop={6}
       >
         <ThemedText style={styles.ctaText}>Start Workout</ThemedText>

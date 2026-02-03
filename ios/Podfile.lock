@@ -1,9 +1,9 @@
 PODS:
   - EXApplication (7.0.7):
     - ExpoModulesCore
-  - EXConstants (18.0.10):
+  - EXConstants (18.0.13):
     - ExpoModulesCore
-  - Expo (54.0.22):
+  - Expo (54.0.32):
     - ExpoModulesCore
     - hermes-engine
     - RCTRequired
@@ -28,15 +28,15 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
-  - ExpoAsset (12.0.9):
+  - ExpoAsset (12.0.12):
     - ExpoModulesCore
   - ExpoBlur (15.0.7):
     - ExpoModulesCore
   - ExpoCrypto (15.0.7):
     - ExpoModulesCore
-  - ExpoFileSystem (19.0.17):
+  - ExpoFileSystem (19.0.21):
     - ExpoModulesCore
-  - ExpoFont (14.0.9):
+  - ExpoFont (14.0.11):
     - ExpoModulesCore
   - ExpoHaptics (15.0.7):
     - ExpoModulesCore
@@ -50,13 +50,13 @@ PODS:
     - SDWebImageAVIFCoder (~> 0.11.0)
     - SDWebImageSVGCoder (~> 1.7.0)
     - SDWebImageWebPCoder (~> 0.14.6)
-  - ExpoKeepAwake (15.0.7):
+  - ExpoKeepAwake (15.0.8):
     - ExpoModulesCore
   - ExpoLinking (8.0.8):
     - ExpoModulesCore
   - ExpoLocation (19.0.7):
     - ExpoModulesCore
-  - ExpoModulesCore (3.0.24):
+  - ExpoModulesCore (3.0.29):
     - hermes-engine
     - RCTRequired
     - RCTTypeSafety
@@ -79,7 +79,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
-  - ExpoSensors (15.0.7):
+  - ExpoSensors (15.0.8):
     - ExpoModulesCore
   - ExpoSplashScreen (31.0.10):
     - ExpoModulesCore
@@ -2435,21 +2435,21 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   EXApplication: 296622817d459f46b6c5fe8691f4aac44d2b79e7
-  EXConstants: fd688cef4e401dcf798a021cfb5d87c890c30ba3
-  Expo: 6194a78e573849c28ab2f14fb3dce1b525ee4d6d
-  ExpoAsset: 9ba6fbd677fb8e241a3899ac00fa735bc911eadf
+  EXConstants: fce59a631a06c4151602843667f7cfe35f81e271
+  Expo: 4e503a041c59c4e34c8be262a135848ad5cd3710
+  ExpoAsset: f867e55ceb428aab99e1e8c082b5aee7c159ea18
   ExpoBlur: 2dd8f64aa31f5d405652c21d3deb2d2588b1852f
   ExpoCrypto: c1fbce112d1b6b79652bbe380b4fd4cc91676595
-  ExpoFileSystem: b79eadbda7b7f285f378f95f959cc9313a1c9c61
-  ExpoFont: cf9d90ec1d3b97c4f513211905724c8171f82961
+  ExpoFileSystem: 858a44267a3e6e9057e0888ad7c7cfbf55d52063
+  ExpoFont: f543ce20a228dd702813668b1a07b46f51878d47
   ExpoHaptics: 807476b0c39e9d82b7270349d6487928ce32df84
   ExpoHead: e317214fa14edeaf17748d39ec9e550a3d1194fb
   ExpoImage: 9c3428921c536ab29e5c6721d001ad5c1f469566
-  ExpoKeepAwake: 1a2e820692e933c94a565ec3fbbe38ac31658ffe
+  ExpoKeepAwake: 55f75eca6499bb9e4231ebad6f3e9cb8f99c0296
   ExpoLinking: f051f28e50ea9269ff539317c166adec81d9342d
   ExpoLocation: 93d7faa0c2adbd5a04686af0c1a61bc6ed3ee2f7
-  ExpoModulesCore: 87979cd52381b29e81e9cb7fa0fd5c4ae494d83e
-  ExpoSensors: c420123b1c0c2a49e86908055742caaefb1f687e
+  ExpoModulesCore: f3da4f1ab5a8375d0beafab763739dbee8446583
+  ExpoSensors: 8f9fe9a9ffd36ca9c2f0fe40dafc0a063f844420
   ExpoSplashScreen: cbb839de72110dea1851dd3e85080b7923af2540
   ExpoSQLite: b312b02c8b77ab55951396e6cd13992f8db9215f
   ExpoSymbols: 1ae04ce686de719b9720453b988d8bc5bf776c68
@@ -2539,6 +2539,6 @@ SPEC CHECKSUMS:
   SDWebImageWebPCoder: e38c0a70396191361d60c092933e22c20d5b1380
   Yoga: 5934998fbeaef7845dbf698f698518695ab4cd1a
 
-PODFILE CHECKSUM: 22b0e6c27e01e3a86dbf45755122c4df037a2f21
+PODFILE CHECKSUM: 39d6f2c2bbc17452272e0b0ecae3d196dec9dc66
 
 COCOAPODS: 1.16.2
