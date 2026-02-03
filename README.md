@@ -45,6 +45,6 @@ Now make sure you are at the root folder of the project
 % npx expo run:ios --device
 and click enter if your device is highlited and the computer recongizes it
 this will build the app on your phone and lots of compilations
-Now for regualr updates not in ios you can run
+Now for regualr updates that are not IOS or React Native changes you can run
 % npx expo start --dev-client                             
 
