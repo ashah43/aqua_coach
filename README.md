@@ -1,42 +1,50 @@
-# Welcome to your Expo app 👋
+# Aqua Coach
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A React Native / Expo app This README provides instructions for getting the app running on iOS.
 
-Run this first to install npm:
-# 1) clone this repo in vscode and then go to vscode and in the terminal tab press new terminal
+---
 
-# Then Install NVM by pasting this in the terminal:
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+## 1. Prerequisites
 
-# 2) Load nvm in your current shell by pasting these two lines in the same command in the same terminal:
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+Make sure you have the following installed:
 
-# 3) Install and use the current LTS of Node (this gives you npm too)
-nvm install --lts
-nvm use --lts
+- Node.js (v18+ recommended)
+- npm or yarn
+- Xcode (for iOS)
+- CocoaPods (`sudo gem install cocoapods`)
+- Expo CLI (`npm install -g expo-cli`)
 
-# 4) Do this next
-npm install
+---
 
-# 5) Verify
-node -v
-npm -v
+## 2. Clone the Repository
 
-#6) Do this next
+```bash
+git clone <your-repo-url>
+cd aqua_coach
 
-npx expo install expo-sensors
+## 3. Create your own branch
+
+##install dependencies
+%npm install
+% cd ios
+% install pods
+% cd ..
+% cp .env.example .env
+to navigate to xcode build:
+% ios/open rowing.xcworkspace
 
 
-## Get started
+## Check your Local setupL Bundle_identifier needs to match and BE DIFFERENT FROM MINE. AN ID CAN ONLY BE USED ONCE AND CONNECTED TO YOUR APPLE ID
+in app.json: "bundleIdentifier": "com.kaylahall.rowing", replace with your own ID which is connetced to what you named it in Xcode and the developer build on you phone
+now check in ios/rowing.xcodeproj/project.xc.workspace/project.pbxproj
+also search for "PRODUCT_BUNDLE_IDENTIFIER = com.kaylahall.rowing;" there are two instances that need to match your Xcode Sign in
 
-1. . Start the app
+## Build and run
+Connect you rphone to the laptop, make sure laptop and phoen are on the same wifi.
+Now make sure you are at the root folder of the project 
+% npx expo run:ios --device
+and click enter if your device is highlited and the computer recongizes it
+this will build the app on your phone and lots of compilations
+Now for regualr updates not in ios you can run
+% npx expo start --dev-client                             
 
-   npx expo start
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
