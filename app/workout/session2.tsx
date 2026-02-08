@@ -7,6 +7,7 @@ import { DeviceMotion, type DeviceMotionMeasurement } from 'expo-sensors';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { BleManager, Device } from 'react-native-ble-plx';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Line, Path, Rect } from 'react-native-svg';
 
 //adding pacer audio
@@ -128,6 +129,7 @@ function CurveChart({ title, data, baseline }: { title: string; data: number[]; 
 
 export default function WorkoutSessionScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   // UI toggles
   const [showPowerGraph, setShowPowerGraph] = useState(true);
@@ -295,42 +297,28 @@ useEffect(() => {
 
  
   // --- Arduino BLE ---
-const [arduinoDevice, setArduinoDevice] = useState<Device | null>(null);
-const [bleStatus, setBleStatus] = useState<string>('Scanning for device...');
+  // Device connection is optional - workout can proceed without it
+  const [arduinoDevice, setArduinoDevice] = useState<Device | null>(null);
+  const [bleStatus, setBleStatus] = useState<string>('No device connected');
   
-useEffect(() => {
-  const SERVICE_UUID = '12345678-1234-5678-1234-56789abcdef0';
+  useEffect(() => {
+    const SERVICE_UUID = '12345678-1234-5678-1234-56789abcdef0';
+    const CHAR_UUID = 'abcdefab-cdef-1234-5678-1234567890ab';
 
-  const subscription = manager.startDeviceScan(
-    [SERVICE_UUID],
-    { allowDuplicates: false },
-    (error, device) => {
-
-      if (error) {
-        console.log('Scan error:', error);
-        setBleStatus('Scan failed');
-        return;
-      }
-
-      if (!device) return;
-
-      console.log('Found:', device.name, device.id);
-
-      setBleStatus('Arduino found! Connecting...');
-      manager.stopDeviceScan();
-
-      device.connect()
-        .then(d => d.discoverAllServicesAndCharacteristics())
-        .then(d => {
-
-          setArduinoDevice(d);
+    // Check for already connected devices (optional - workout works without it)
+    manager.connectedDevices([SERVICE_UUID])
+      .then((devices: Device[]) => {
+        if (devices.length > 0) {
+          console.log('Found already connected device:', devices[0].name);
+          const device = devices[0];
+          setArduinoDevice(device);
           setBleStatus('Connected! Listening...');
-
-          return d.monitorCharacteristicForService(
+          
+          // Start monitoring
+          device.monitorCharacteristicForService(
             SERVICE_UUID,
-            'abcdefab-cdef-1234-5678-1234567890ab',
-            (err, char) => {
-
+            CHAR_UUID,
+            (err: any, char: any) => {
               if (err) {
                 console.log('Notify error:', err);
                 return;
@@ -345,18 +333,23 @@ useEffect(() => {
               setPower(newPower);
             }
           );
-        })
-        .catch(err => {
-          console.log('Connection error:', err);
-          setBleStatus('Connection failed');
-        });
-    }
-  );
+        } else {
+          // No device connected - workout can continue without it
+          console.log('No device connected - workout will proceed without BLE data');
+          setBleStatus('No device connected');
+          setArduinoDevice(null);
+        }
+      })
+      .catch((err: any) => {
+        console.log('Error checking connected devices:', err);
+        setBleStatus('No device connected');
+        // Continue without device - don't block the workout
+      });
 
-  return () => {
-    manager.stopDeviceScan();
-  };
-}, []);
+    return () => {
+      manager.stopDeviceScan();
+    };
+  }, []);
 
   // Permissions (iOS)
   async function ensureMotionPermission() {
@@ -508,11 +501,13 @@ useEffect(() => {
     <>
       <Stack.Screen options={{ headerShown: false }} />
 
-      <ScrollView contentContainerStyle={styles.screen}>
-         {/* BLE status at the top */}
+      <ScrollView contentContainerStyle={[styles.screen, { paddingTop: insets.top + 20 }]}>
+         {/* BLE status at the top - only show if not connected */}
   {!arduinoDevice && (
     <ThemedView style={styles.bleStatusContainer}>
-      <ThemedText style={styles.bleStatusText}>{bleStatus}</ThemedText>
+      <ThemedText style={styles.bleStatusText}>
+        {bleStatus} - Workout will use phone sensors only
+      </ThemedText>
     </ThemedView>
   )}
 
@@ -538,27 +533,27 @@ useEffect(() => {
 {/* Pills */}
 <View style={styles.controlsWrap}>
   <Pill
-    label={(showSplit ? '✓ ' : '👁️ ') + 'Split'}
+    label={'Split'}
     active={showSplit}
     onPress={() => setShowSplit((v) => !v)}
   />
   <Pill
-    label={(showAvgPower ? '✓ ' : '👁️ ') + 'Avg Power'}
+    label={'Avg Power'}
     active={showAvgPower}
     onPress={() => setShowAvgPower((v) => !v)}
   />
   <Pill
-    label={(showAccelGraph ? '✓ ' : '👁️ ') + 'Acceleration'}
+    label={'Acceleration'}
     active={showAccelGraph}
     onPress={() => setShowAccelGraph((v) => !v)}
   />
   <Pill
-    label={(showPowerGraph ? '✓ ' : '👁️ ') + 'Power'}
+    label={'Power'}
     active={showPowerGraph}
     onPress={() => setShowPowerGraph((v) => !v)}
   />
   <Pill
-    label={isPacerOn ? `Pacer: ${selectedSplit}` : 'Pacer'}
+    label={'Pacer'}
     active={isPacerOn || showSplitOptions}
     onPress={() => {
       if (showSplitOptions) {
@@ -673,7 +668,7 @@ useEffect(() => {
 const R = 18;
 
 const styles = StyleSheet.create({
-  screen: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 30, rowGap: 8 },
+  screen: { paddingHorizontal: 20, paddingBottom: 30, rowGap: 8 },
 
   // top bar
   topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
