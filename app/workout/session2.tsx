@@ -326,11 +326,24 @@ useEffect(() => {
 
               if (!char?.value) return;
 
+              
               const data = Buffer.from(char.value, 'base64');
-              const newPower = data.readUInt16LE(0);
 
-              console.log('Power:', newPower);
-              setPower(newPower);
+              if (data.length >= 2) {
+                const byte1 = data.readUInt8(1);
+                const byte2 = data.readUInt8(2);
+
+                const newPower = byte1 + (byte2 * 256);
+
+                console.log('Byte 1:', byte1);
+                console.log('Byte 2:', byte2);
+                console.log('Computed power:', newPower);
+                  setPower(newPower);
+              }
+
+
+              
+            
             }
           );
         } else {
