@@ -23,7 +23,7 @@
 		42B458530EBC910DFCFF19AA /* Pods-rowing.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-rowing.debug.xcconfig"; path = "Target Support Files/Pods-rowing/Pods-rowing.debug.xcconfig"; sourceTree = "<group>"; };
 		89EE942F44BA306B6541CE50 /* Pods-rowing.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-rowing.release.xcconfig"; path = "Target Support Files/Pods-rowing/Pods-rowing.release.xcconfig"; sourceTree = "<group>"; };
 		8A464C1ABD8654A7FAFB88A0 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-rowing/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
-		9C42DF26FA3579C480E2A37B /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = rowing/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		9C42DF26FA3579C480E2A37B /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xml; name = PrivacyInfo.xcprivacy; path = rowing/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = rowing/SplashScreen.storyboard; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
 		E9D80C29A55C094CF5C2988D /* libPods-rowing.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-rowing.a"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -119,7 +119,6 @@
 				42B458530EBC910DFCFF19AA /* Pods-rowing.debug.xcconfig */,
 				89EE942F44BA306B6541CE50 /* Pods-rowing.release.xcconfig */,
 			);
-			name = Pods;
 			path = Pods;
 			sourceTree = "<group>";
 		};
@@ -167,7 +166,6 @@
 				TargetAttributes = {
 					13B07F861A680F5B00A75B9A = {
 						LastSwiftMigration = 1250;
-						DevelopmentTeam = "BNY8JX9243";
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -346,7 +344,10 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = rowing/rowing.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = QJ9L2L4WZ4;
 				ENABLE_BITCODE = NO;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"$(inherited)",
@@ -365,16 +366,13 @@
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
-				PRODUCT_BUNDLE_IDENTIFIER = com.kaylahall.rowing;
+				PRODUCT_BUNDLE_IDENTIFIER = com.oooople.rowing;
 				PRODUCT_NAME = rowing;
 				SWIFT_OBJC_BRIDGING_HEADER = "rowing/rowing-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VERSIONING_SYSTEM = "apple-generic";
-				DEVELOPMENT_TEAM = "BNY8JX9243";
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
 			};
 			name = Debug;
 		};
@@ -385,7 +383,10 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = rowing/rowing.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = QJ9L2L4WZ4;
 				INFOPLIST_FILE = rowing/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -399,15 +400,12 @@
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
-				PRODUCT_BUNDLE_IDENTIFIER = com.kaylahall.rowing;
+				PRODUCT_BUNDLE_IDENTIFIER = com.oooople.rowing;
 				PRODUCT_NAME = rowing;
 				SWIFT_OBJC_BRIDGING_HEADER = "rowing/rowing-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VERSIONING_SYSTEM = "apple-generic";
-				DEVELOPMENT_TEAM = "BNY8JX9243";
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
 			};
 			name = Release;
 		};

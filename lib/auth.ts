@@ -10,7 +10,8 @@ WebBrowser.maybeCompleteAuthSession();
 // This MUST match a redirect URL you added in Supabase auth settings
 // e.g. exp://.../--/auth/callback when running in dev
 const redirectTo = makeRedirectUri({
-  path: '/auth/callback',
+  scheme: 'rowing',
+  path: 'auth/callback',
 });
 
 async function createSessionFromUrl(url: string) {
