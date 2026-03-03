@@ -1,10 +1,35 @@
 // app/(tabs)/progress.tsx
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
-import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import {
+  Image,
+  ImageBackground,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+} from 'react-native';
 
-const RangePill = ({
+const COLORS = {
+  navy: '#04507D',
+  blue: '#4873A3',
+  aqua: '#41C9E5',
+  aqua2: '#6BC7E2',
+  coral: '#FB8F6E',
+  surface: '#FFFFFF',
+  border: '#DAE0E7',
+};
+
+type RangeKey = 'Week' | 'Month' | 'All';
+
+const RANGE_LABEL: Record<RangeKey, string> = {
+  Week: 'This Week',
+  Month: 'This Month',
+  All: 'All Time',
+};
+
+function RangePill({
   label,
   active,
   onPress,
@@ -12,162 +37,260 @@ const RangePill = ({
   label: string;
   active?: boolean;
   onPress?: () => void;
-}) => (
-  <Pressable onPress={onPress} style={[styles.pill, active && styles.pillActive]}>
-    <ThemedText style={[styles.pillText, active && styles.pillTextActive]}>{label}</ThemedText>
-  </Pressable>
-);
-
-export default function ProgressScreen() {
-  const [range, setRange] = useState<'Week' | 'Month' | 'All'>('Week');
-  const bars = [10, 22, 16, 28, 20, 32, 18, 26, 14, 24, 12, 30];
-
+}) {
   return (
-    <ScrollView contentContainerStyle={styles.screen}>
-      {/* Hero */}
-      <ThemedView style={styles.hero}>
-        <ThemedText type="title" style={styles.title}>Progress</ThemedText>
-        <ThemedText style={styles.subtitle}>Track Your Rowing Performance</ThemedText>
-
-        <View style={styles.pillsRow}>
-          {(['Week', 'Month', 'All'] as const).map(p => (
-            <RangePill key={p} label={p} active={range === p} onPress={() => setRange(p)} />
-          ))}
-        </View>
-      </ThemedView>
-
-      {/* Top stats */}
-      <View style={styles.topRow}>
-        <ThemedView style={styles.statCard}>
-          <ThemedText style={styles.cardLabelTop}>Total Distance</ThemedText>
-          <ThemedText style={styles.bigValue}>0.0 km</ThemedText>
-          <ThemedText style={styles.cardLabelBottom}>0 m total</ThemedText>
-        </ThemedView>
-
-        <ThemedView style={styles.statCard}>
-          <ThemedText style={styles.cardLabelTop}>Total Sessions</ThemedText>
-          <ThemedText style={styles.bigValue}>0</ThemedText>
-          <ThemedText style={styles.cardLabelBottom}>Workouts Completed</ThemedText>
-        </ThemedView>
-      </View>
-
-      {/* Trend chart */}
-      <ThemedView style={styles.chartCard}>
-        <View style={styles.chartHeader}>
-          <ThemedText style={styles.chartTitle}>Distance Trend</ThemedText>
-          <ThemedText style={styles.chartSubTitle}>
-            {range === 'Week' ? 'This Week' : range === 'Month' ? 'This Month' : 'All Time'}
-          </ThemedText>
-        </View>
-
-        <View style={styles.chartArea}>
-          {Array.from({ length: 4 }).map((_, i) => (
-            <View key={`h-${i}`} style={[styles.gridH, { top: 18 + i * 36 }]} />
-          ))}
-          {Array.from({ length: 5 }).map((_, i) => (
-            <View key={`v-${i}`} style={[styles.gridV, { left: 18 + i * 62 }]} />
-          ))}
-
-          <View style={styles.barsRow}>
-            {bars.map((h, idx) => (
-              <View key={idx} style={[styles.bar, { height: 12 + h }]} />
-            ))}
-          </View>
-        </View>
-      </ThemedView>
-
-      {/* Secondary stats */}
-      <View style={styles.bottomRow}>
-        <ThemedView style={styles.smallCard}>
-          <ThemedText style={styles.smallLabel}>Best Power</ThemedText>
-          <ThemedText style={styles.smallValue}>— W</ThemedText>
-        </ThemedView>
-
-        <ThemedView style={styles.smallCard}>
-          <ThemedText style={styles.smallLabel}>Avg SPM</ThemedText>
-          <ThemedText style={styles.smallValue}>—</ThemedText>
-        </ThemedView>
-      </View>
-    </ScrollView>
+    <Pressable
+      onPress={onPress}
+      style={[styles.rangePill, active && styles.rangePillActive]}
+      hitSlop={8}
+    >
+      <ThemedText style={[styles.rangePillText, active && styles.rangePillTextActive]}>
+        {label}
+      </ThemedText>
+    </Pressable>
   );
 }
 
-const R = 22;
+export default function ProgressScreen() {
+  const [range, setRange] = useState<RangeKey>('Week');
+
+  // Mock bars (same as your current)
+  const bars = useMemo(() => [10, 22, 16, 28, 20, 32, 18, 26, 14, 24, 12, 30], []);
+
+  return (
+    <ImageBackground
+      source={require('@/assets/images/rowing-background.png')}
+      style={styles.bg}
+      imageStyle={styles.bgImage}
+      resizeMode="cover"
+    >
+      <ScrollView contentContainerStyle={styles.screen}>
+        {/* HEADER CARD (matches Home) */}
+        <ThemedView style={styles.header}>
+          <View style={styles.headerTopRow}>
+            <Image
+              source={require('@/assets/images/aquacoach-logo.png')}
+              style={styles.logo}
+              resizeMode="contain"
+            />
+            <View style={{ flex: 1 }}>
+              <ThemedText type="title" style={styles.title}>
+                Progress
+              </ThemedText>
+              <ThemedText style={styles.subtitle}>Track your progress</ThemedText>
+            </View>
+          </View>
+        </ThemedView>
+
+        {/* RANGE SELECTOR (same pill style as Home) */}
+        <View style={styles.rangeContainer}>
+          <View style={styles.rangeRow}>
+            {(['Week', 'Month', 'All'] as const).map((key) => {
+              const active = range === key;
+              return (
+                <RangePill
+                  key={key}
+                  label={key}
+                  active={active}
+                  onPress={() => setRange(key)}
+                />
+              );
+            })}
+          </View>
+        </View>
+
+        {/* METRICS GRID (same card styling as Home) */}
+        <View style={styles.grid}>
+          <ThemedView style={styles.card}>
+            <View style={[styles.cardAccent, { backgroundColor: COLORS.aqua }]} />
+            <ThemedText style={styles.cardLabel}>📏 Total Distance</ThemedText>
+            <ThemedText style={styles.cardValue}>0.0 km</ThemedText>
+            <ThemedText style={styles.cardSub}>traveled</ThemedText>
+          </ThemedView>
+
+          <ThemedView style={styles.card}>
+            <View style={[styles.cardAccent, { backgroundColor: COLORS.aqua2 }]} />
+            <ThemedText style={styles.cardLabel}>🚣 Total Sessions</ThemedText>
+            <ThemedText style={styles.cardValue}>0</ThemedText>
+            <ThemedText style={styles.cardSub}>completed</ThemedText>
+          </ThemedView>
+        </View>
+
+        {/* CHART CARD (same card style + chart bg like Home) */}
+        <ThemedView style={styles.chartCard}>
+          <View style={styles.chartHeader}>
+            <ThemedText style={styles.chartTitle}>Distance Trend</ThemedText>
+            <ThemedText style={styles.chartSubTitle}>{RANGE_LABEL[range]}</ThemedText>
+          </View>
+
+          <View style={styles.chartArea}>
+            {/* Grid */}
+            {Array.from({ length: 4 }).map((_, i) => (
+              <View key={`h-${i}`} style={[styles.gridH, { top: 18 + i * 36 }]} />
+            ))}
+            {Array.from({ length: 5 }).map((_, i) => (
+              <View key={`v-${i}`} style={[styles.gridV, { left: 18 + i * 62 }]} />
+            ))}
+
+            {/* Bars */}
+            <View style={styles.barsRow}>
+              {bars.map((h, idx) => (
+                <View key={idx} style={[styles.bar, { height: 12 + h }]} />
+              ))}
+            </View>
+          </View>
+        </ThemedView>
+
+        {/* SECONDARY STATS (same grid cards) */}
+        <View style={styles.grid}>
+          <ThemedView style={styles.card}>
+            <View style={[styles.cardAccent, { backgroundColor: COLORS.blue }]} />
+            <ThemedText style={styles.cardLabel}>⚡ Best Power</ThemedText>
+            <ThemedText style={styles.cardValue}>— W</ThemedText>
+            <ThemedText style={styles.cardSub}>Peak output</ThemedText>
+          </ThemedView>
+
+          <ThemedView style={styles.card}>
+            <View style={[styles.cardAccent, { backgroundColor: COLORS.coral }]} />
+            <ThemedText style={styles.cardLabel}>🔁 Avg SPM</ThemedText>
+            <ThemedText style={styles.cardValue}>—</ThemedText>
+            <ThemedText style={styles.cardSub}>Stroke rate</ThemedText>
+          </ThemedView>
+        </View>
+
+        <View style={{ height: 8 }} />
+      </ScrollView>
+    </ImageBackground>
+  );
+}
 
 const styles = StyleSheet.create({
+  bg: { flex: 1 },
+  bgImage: { opacity: 0.28 },
+
   screen: {
+    flexGrow: 1,
     paddingHorizontal: 22,
     paddingTop: 24,
     paddingBottom: 44,
-    rowGap: 16,
+    rowGap: 18,
   },
 
-  hero: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: R + 4,
-    paddingVertical: 20,         // +2 for a touch more air
-    paddingHorizontal: 20,
+  // Header (copied style from your Home index)
+  header: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 26,
+    paddingVertical: 18,
+    paddingHorizontal: 18,
     borderWidth: 1,
-    borderColor: '#EEF1F5',
+    borderColor: COLORS.border,
     shadowColor: '#000',
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.06,
     shadowRadius: 14,
     shadowOffset: { width: 0, height: 6 },
     elevation: 2,
   },
-  title: { fontSize: 28, marginBottom: 6 },
-  subtitle: { fontSize: 16, opacity: 0.75 },
-  pillsRow: { marginTop: 12, flexDirection: 'row', gap: 8 },
-  pill: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#D9DDE4',
-    backgroundColor: '#FFFFFF',
-  },
-  pillActive: { backgroundColor: '#0B0E1A', borderColor: '#0B0E1A' },
-  pillText: { fontSize: 14, opacity: 0.85 },
-  pillTextActive: { color: '#FFFFFF', fontWeight: '600', opacity: 1 },
-
-  topRow: {
+  headerTopRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    columnGap: 16,
+    alignItems: 'center',
+    gap: 14,
   },
-  statCard: {
+  logo: { width: 100, height: 100 },
+  title: {
+    fontSize: 30,
+    marginBottom: 4,
+    letterSpacing: -0.2,
+  },
+  subtitle: { fontSize: 16, opacity: 0.75 },
+
+  // Range selector (Home style)
+  rangeContainer: {
+    alignItems: 'center',
+    marginTop: 2,
+    marginBottom: 2,
+  },
+  rangeRow: {
+    flexDirection: 'row',
+    backgroundColor: '#EAF7FB',
+    borderRadius: 999,
+    padding: 4,
+    gap: 4,
+  },
+  rangePill: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+  },
+  rangePillActive: {
+    backgroundColor: COLORS.aqua,
+  },
+  rangePillText: {
+    fontSize: 14,
+    opacity: 0.75,
+  },
+  rangePillTextActive: {
+    opacity: 1,
+    fontWeight: '700',
+  },
+
+  // Grid/cards (Home style)
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  card: {
     width: '48%',
-    backgroundColor: '#FFFFFF',
-    borderRadius: R,
-    paddingVertical: 20,         // +2
+    backgroundColor: COLORS.surface,
+    borderRadius: 22,
+    paddingVertical: 20,
     paddingHorizontal: 16,
+    marginBottom: 20,
     borderWidth: 1,
-    borderColor: '#E8EAF0',
+    borderColor: COLORS.border,
     shadowColor: '#000',
     shadowOpacity: 0.05,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 6 },
     elevation: 2,
+    minHeight: 150,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  cardLabelTop: { fontSize: 15, opacity: 0.6, marginBottom: 6 },
-
-  // >>> Key change: lighter weight + explicit lineHeight + no negative letterSpacing
-  bigValue: {
-    fontSize: 30,
-    fontWeight: '600',
-    lineHeight: 34,
-    marginBottom: 6,
-    letterSpacing: 0,
+  cardAccent: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    height: 6,
+    width: '100%',
+  },
+  cardLabel: {
+    fontSize: 16,
+    opacity: 0.75,
+    textAlign: 'center',
+  },
+  cardValue: {
+    fontSize: 34,
+    fontWeight: '700',
+    lineHeight: 40,
+    marginTop: 10,
+    textAlign: 'center',
+  },
+  cardSub: {
+    fontSize: 13,
+    opacity: 0.65,
+    marginTop: 6,
+    textAlign: 'center',
   },
 
-  cardLabelBottom: { fontSize: 15, opacity: 0.6 },
-
+  // Chart card
   chartCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: R,
+    backgroundColor: COLORS.surface,
+    borderRadius: 22,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#E8EAF0',
+    borderColor: COLORS.border,
     shadowColor: '#000',
     shadowOpacity: 0.05,
     shadowRadius: 12,
@@ -220,32 +343,5 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 6,
     backgroundColor: '#0B0E1A',
     opacity: 0.9,
-  },
-
-  bottomRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    columnGap: 16,
-  },
-  smallCard: {
-    width: '48%',
-    backgroundColor: '#FFFFFF',
-    borderRadius: R,
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    borderWidth: 1,
-    borderColor: '#E8EAF0',
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 2,
-  },
-  smallLabel: { fontSize: 15, opacity: 0.6, marginBottom: 6 },
-  smallValue: {
-    fontSize: 20,
-    fontWeight: '600',   // lighter weight to avoid squish
-    lineHeight: 24,
-    letterSpacing: 0,
   },
 });

@@ -72,7 +72,8 @@ export default function HomeScreen() {
   }, []);
 
   const meta = user?.user_metadata as any;
-  const displayName = meta?.full_name || meta?.name || user?.email || '';
+  const displayName =
+    meta?.full_name || meta?.name || user?.email || '';
 
   const stats = MOCK_STATS[range];
 
@@ -92,18 +93,24 @@ export default function HomeScreen() {
               style={styles.logo}
               resizeMode="contain"
             />
-            <View>
+
+            {/* TEXT COLUMN */}
+            <View style={styles.headerTextWrap}>
               <ThemedText type="title" style={styles.title}>
                 Dashboard
               </ThemedText>
-              <ThemedText style={styles.subtitle}>
+
+              <ThemedText
+                style={styles.subtitle}
+                numberOfLines={2}
+              >
                 Welcome back, {displayName}
               </ThemedText>
             </View>
           </View>
         </ThemedView>
 
-        {/* RANGE SELECTOR — BELOW HEADER & CENTERED */}
+        {/* RANGE SELECTOR */}
         <View style={styles.rangeContainer}>
           <View style={styles.rangeRow}>
             {(['day', 'week', 'month'] as const).map((key) => {
@@ -147,7 +154,7 @@ export default function HomeScreen() {
 
           <ThemedView style={styles.card}>
             <View style={[styles.cardAccent, { backgroundColor: COLORS.coral }]} />
-            <ThemedText style={styles.cardLabel}>⚡Avg Power</ThemedText>
+            <ThemedText style={styles.cardLabel}>⚡ Avg Power</ThemedText>
             <ThemedText style={styles.cardValue}>{stats.avgPower}</ThemedText>
           </ThemedView>
         </View>
@@ -189,12 +196,17 @@ const styles = StyleSheet.create({
   headerTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
   },
 
   logo: {
     width: 100,
     height: 100,
+    marginRight: 14,
+  },
+
+  headerTextWrap: {
+    flex: 1,
+    minWidth: 0,      // CRITICAL FIX
   },
 
   title: {
@@ -206,9 +218,9 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 16,
     opacity: 0.75,
+    flexWrap: 'wrap',
   },
 
-  /* RANGE SELECTOR */
   rangeContainer: {
     alignItems: 'center',
     marginTop: 6,
@@ -239,7 +251,6 @@ const styles = StyleSheet.create({
     opacity: 1,
   },
 
-  /* GRID */
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',

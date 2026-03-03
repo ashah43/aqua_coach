@@ -36,7 +36,7 @@ export default function TabLayout() {
       />
 
       <Tabs.Screen
-        name="workout"   // ✅ no parentheses
+        name="workout"
         options={{
           title: 'Workout',
           tabBarIcon: ({ color }) => (

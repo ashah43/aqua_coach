@@ -3,30 +3,98 @@ import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { BleManager, Device } from 'react-native-ble-plx';
+import {
+  ImageBackground,
+  Keyboard,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  TouchableWithoutFeedback,
+  View,
+} from 'react-native';
+import { BleManager, type Device } from 'react-native-ble-plx';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const manager = new BleManager();
 
+const COLORS = {
+  navy: '#04507D',
+  blue: '#4873A3',
+  aqua: '#41C9E5',
+  aqua2: '#6BC7E2',
+  coral: '#FB8F6E',
+  surface: '#FFFFFF',
+  border: '#DAE0E7',
+  ink: '#0B0E1A',
+  soft: '#F7F8FB',
+};
+
+function digitsOnly(s: string) {
+  return s.replace(/[^\d]/g, '');
+}
+
+function clampNumber(n: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, n));
+}
+
 export default function WorkoutScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+
   const [arduinoDevice, setArduinoDevice] = useState<Device | null>(null);
   const [bleStatus, setBleStatus] = useState<string>('Not connected');
   const [isScanning, setIsScanning] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Connect to Arduino device
+  // ---- Workout Goals ----
+  const [goalDurationMin, setGoalDurationMin] = useState(30);
+  const [goalDistanceM, setGoalDistanceM] = useState(5000);
+  const [goalPowerW, setGoalPowerW] = useState(200);
+  const [goalSpm, setGoalSpm] = useState(20);
+
+  // ---- Modal state ----
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [draftDuration, setDraftDuration] = useState('30');
+  const [draftDistance, setDraftDistance] = useState('5000');
+  const [draftPower, setDraftPower] = useState('200');
+  const [draftSpm, setDraftSpm] = useState('20');
+
+  const openEdit = () => {
+    setDraftDuration(String(goalDurationMin));
+    setDraftDistance(String(goalDistanceM));
+    setDraftPower(String(goalPowerW));
+    setDraftSpm(String(goalSpm));
+    setIsEditOpen(true);
+  };
+
+  const cancelEdit = () => setIsEditOpen(false);
+
+  const saveEdit = () => {
+    const dMin = clampNumber(parseInt(digitsOnly(draftDuration) || '0', 10), 1, 600);
+    const dist = clampNumber(parseInt(digitsOnly(draftDistance) || '0', 10), 50, 100000);
+    const pwr = clampNumber(parseInt(digitsOnly(draftPower) || '0', 10), 10, 2000);
+    const spm = clampNumber(parseInt(digitsOnly(draftSpm) || '0', 10), 10, 60);
+
+    setGoalDurationMin(dMin);
+    setGoalDistanceM(dist);
+    setGoalPowerW(pwr);
+    setGoalSpm(spm);
+
+    setIsEditOpen(false);
+  };
+
+  // ---- BLE ----
   const handleConnectDevice = () => {
     if (arduinoDevice) {
-      // Already connected, navigate to workout
       router.push('/workout/session2');
       return;
     }
 
     if (isScanning) {
-      // Stop scanning if already scanning
       manager.stopDeviceScan();
       setIsScanning(false);
       setBleStatus('Not connected');
@@ -37,312 +105,231 @@ export default function WorkoutScreen() {
     setBleStatus('Scanning for device...');
     const SERVICE_UUID = '12345678-1234-5678-1234-56789abcdef0';
 
-    // Clear any existing timeout
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-    }
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
 
-    // Set timeout to stop scanning after 5 seconds
     timeoutRef.current = setTimeout(() => {
-      console.log('Scan timeout - no device found after 5 seconds');
       manager.stopDeviceScan();
       setIsScanning(false);
       setBleStatus('Not connected');
       timeoutRef.current = null;
     }, 5000);
 
-    const subscription = manager.startDeviceScan(
-      [SERVICE_UUID],
-      { allowDuplicates: false },
-      (error, device) => {
-        if (error) {
-          console.log('Scan error:', error);
-          if (timeoutRef.current) {
-            clearTimeout(timeoutRef.current);
-            timeoutRef.current = null;
-          }
-          setBleStatus('Not connected');
-          setIsScanning(false);
-          return;
-        }
-
-        if (!device) return;
-
-        // Device found - clear timeout
-        if (timeoutRef.current) {
-          clearTimeout(timeoutRef.current);
-          timeoutRef.current = null;
-        }
-        console.log('Found device:', device.name, device.id);
-        setBleStatus('Device found! Connecting...');
-        manager.stopDeviceScan();
+    manager.startDeviceScan([SERVICE_UUID], { allowDuplicates: false }, (error, device) => {
+      if (error) {
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        setBleStatus('Not connected');
         setIsScanning(false);
-
-        device.connect()
-          .then(d => d.discoverAllServicesAndCharacteristics())
-          .then(d => {
-            setArduinoDevice(d);
-            setBleStatus('Connected! Ready to start workout');
-            console.log('Connected to Arduino device');
-          })
-          .catch(err => {
-            console.log('Connection error:', err);
-            setBleStatus('Not connected');
-          });
+        return;
       }
-    );
+
+      if (!device) return;
+
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+
+      manager.stopDeviceScan();
+      setIsScanning(false);
+
+      device
+        .connect()
+        .then((d) => d.discoverAllServicesAndCharacteristics())
+        .then((d) => {
+          setArduinoDevice(d);
+          setBleStatus('Connected! Ready to start workout');
+        })
+        .catch(() => setBleStatus('Not connected'));
+    });
   };
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       manager.stopDeviceScan();
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-        timeoutRef.current = null;
-      }
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
   }, []);
 
+  const showBleBanner = (isScanning || arduinoDevice) && bleStatus !== 'Not connected';
+
   return (
-    <ScrollView contentContainerStyle={[styles.screen, { paddingTop: insets.top + 24 }]}>
-      <ThemedView style={styles.hero}>
-        <ThemedText style={styles.heroTitle}>Get ready to row</ThemedText>
-        <ThemedText style={styles.heroText}>
-          Track your performance with real-time metrics and stroke analysis.
-        </ThemedText>
-      </ThemedView>
-
-      <ThemedView style={styles.card}>
-        <ThemedText style={styles.cardTitle}>Workout Goals</ThemedText>
-
-        <View style={styles.grid}>
-          <View style={[styles.cell, styles.brRight, styles.brBottom]}>
-            <ThemedText style={styles.cellLabel}>Duration</ThemedText>
-            <ThemedText style={styles.cellValue}>30 min</ThemedText>
-          </View>
-          <View style={[styles.cell, styles.brBottom]}>
-            <ThemedText style={styles.cellLabel}>Distance</ThemedText>
-            <ThemedText style={styles.cellValue}>5000 m</ThemedText>
-          </View>
-          <View style={[styles.cell, styles.brRight]}>
-            <ThemedText style={styles.cellLabel}>Target Power</ThemedText>
-            <ThemedText style={styles.cellValue}>200 W</ThemedText>
-          </View>
-          <View style={styles.cell}>
-            <ThemedText style={styles.cellLabel}>Stroke Rate</ThemedText>
-            <ThemedText style={styles.cellValue}>20 SPM</ThemedText>
-          </View>
-          <View style={styles.cell}>
-            <ThemedText style={styles.cellLabel}>Edit</ThemedText>
-            
-          </View>
-        </View>
-      </ThemedView>
-
-      {/* BLE Status - only show when scanning or connected */}
-      {(isScanning || arduinoDevice) && bleStatus !== 'Not connected' && (
-        <ThemedView style={[
-          styles.bleStatusContainer,
-          arduinoDevice && styles.bleStatusContainerConnected
-        ]}>
-          <ThemedText style={[
-            styles.bleStatusText,
-            arduinoDevice && styles.bleStatusTextConnected
-          ]}>
-            {bleStatus}
+    <ImageBackground
+      source={require('@/assets/images/rowing-background.png')}
+      style={styles.bg}
+      imageStyle={styles.bgImage}
+      resizeMode="cover"
+    >
+      <ScrollView contentContainerStyle={[styles.screen, { paddingTop: insets.top + 24 }]}>
+        <ThemedView style={styles.hero}>
+          <ThemedText style={styles.heroTitle}>Get ready to row</ThemedText>
+          <ThemedText style={styles.heroText}>
+            Track your performance with real-time metrics and stroke analysis.
           </ThemedText>
         </ThemedView>
-      )}
 
-      <Pressable
-        style={({ pressed }) => [
-          styles.cta,
-          pressed && { transform: [{ scale: 0.98 }] },
-          !arduinoDevice && isScanning && styles.ctaScanning,
-          arduinoDevice && styles.ctaConnected
-        ]}
-        onPress={handleConnectDevice}
-        hitSlop={6}
-        disabled={isScanning && !arduinoDevice}
-      >
-        <ThemedText style={styles.ctaText}>
-          {arduinoDevice 
-            ? 'Ready to Start Workout' 
-            : isScanning 
-            ? 'Scanning...' 
-            : 'Connect Device'}
-        </ThemedText>
-      </Pressable>
+        <ThemedView style={styles.card}>
+          <View style={styles.cardHeaderRow}>
+            <ThemedText style={styles.cardTitle}>Workout Goals</ThemedText>
+            <Pressable onPress={openEdit} style={styles.editBtn}>
+              <ThemedText style={styles.editBtnText}>Edit</ThemedText>
+            </Pressable>
+          </View>
 
-      {/* Continue without device option */}
-      <Pressable
-        style={({ pressed }) => [
-          styles.ctaSecondary,
-          pressed && { transform: [{ scale: 0.98 }] }
-        ]}
-        onPress={() => router.push('/workout/session2')}
-        hitSlop={6}
-      >
-        <ThemedText style={styles.ctaSecondaryText}>
-          Continue without Device
-        </ThemedText>
-      </Pressable>
+          <View style={styles.grid}>
+            <View style={[styles.cell, styles.brRight, styles.brBottom]}>
+              <ThemedText style={styles.cellLabel}>Duration</ThemedText>
+              <ThemedText style={styles.cellValue}>{goalDurationMin} min</ThemedText>
+            </View>
 
-      <View style={{ height: 12 }} />
-    </ScrollView>
+            <View style={[styles.cell, styles.brBottom]}>
+              <ThemedText style={styles.cellLabel}>Distance</ThemedText>
+              <ThemedText style={styles.cellValue}>{goalDistanceM} m</ThemedText>
+            </View>
+
+            <View style={[styles.cell, styles.brRight]}>
+              <ThemedText style={styles.cellLabel}>Target Power</ThemedText>
+              <ThemedText style={styles.cellValue}>{goalPowerW} W</ThemedText>
+            </View>
+
+            <View style={styles.cell}>
+              <ThemedText style={styles.cellLabel}>Stroke Rate</ThemedText>
+              <ThemedText style={styles.cellValue}>{goalSpm} SPM</ThemedText>
+            </View>
+          </View>
+        </ThemedView>
+
+        {showBleBanner && (
+          <ThemedView style={styles.bleStatusContainer}>
+            <ThemedText style={styles.bleStatusText}>{bleStatus}</ThemedText>
+          </ThemedView>
+        )}
+
+        <Pressable style={styles.cta} onPress={handleConnectDevice}>
+          <ThemedText style={styles.ctaText}>
+            {arduinoDevice ? 'Ready to Start Workout' : isScanning ? 'Scanning...' : 'Connect Device'}
+          </ThemedText>
+        </Pressable>
+
+        <Pressable style={styles.ctaSecondary} onPress={() => router.push('/workout/session2')}>
+          <ThemedText style={styles.ctaSecondaryText}>Continue without Device</ThemedText>
+        </Pressable>
+      </ScrollView>
+
+      {/* ---- Modal ---- */}
+      <Modal visible={isEditOpen} transparent animationType="fade" onRequestClose={cancelEdit}>
+        <Pressable style={styles.modalBackdrop} onPress={cancelEdit} />
+
+        <KeyboardAvoidingView
+          style={styles.modalContainer}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 16 }]}>
+              <View style={styles.modalTopRow}>
+                <ThemedText style={styles.modalTitle}>Edit Goals</ThemedText>
+                <Pressable onPress={cancelEdit}>
+                  <ThemedText style={styles.closeText}>✕</ThemedText>
+                </Pressable>
+              </View>
+
+              <ScrollView keyboardShouldPersistTaps="handled">
+                {[
+                  ['Duration', draftDuration, setDraftDuration, 'min'],
+                  ['Distance', draftDistance, setDraftDistance, 'm'],
+                  ['Target Power', draftPower, setDraftPower, 'W'],
+                  ['Stroke Rate', draftSpm, setDraftSpm, 'SPM'],
+                ].map(([label, value, setter, unit]: any) => (
+                  <View key={label} style={styles.formRow}>
+                    <ThemedText style={styles.formLabel}>{label}</ThemedText>
+                    <View style={styles.inputWrap}>
+                      <TextInput
+                        value={value}
+                        onChangeText={(t) => setter(digitsOnly(t))}
+                        keyboardType="number-pad"
+                        style={styles.input}
+                      />
+                      <ThemedText style={styles.unit}>{unit}</ThemedText>
+                    </View>
+                  </View>
+                ))}
+              </ScrollView>
+
+              <View style={styles.modalBtns}>
+                <Pressable style={styles.modalBtnGhost} onPress={cancelEdit}>
+                  <ThemedText style={styles.modalBtnGhostText}>Cancel</ThemedText>
+                </Pressable>
+
+                <Pressable style={styles.modalBtn} onPress={saveEdit}>
+                  <ThemedText style={styles.modalBtnText}>Save</ThemedText>
+                </Pressable>
+              </View>
+            </View>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
+      </Modal>
+    </ImageBackground>
   );
 }
 
-const R = 22; // shared corner radius
-
 const styles = StyleSheet.create({
-  screen: {
-    paddingHorizontal: 22,
-    paddingBottom: 40,
-    rowGap: 18,
-  },
+  bg: { flex: 1 },
+  bgImage: { opacity: 0.28 },
+  screen: { paddingHorizontal: 22, paddingBottom: 40, rowGap: 18 },
 
-  // Hero
-  hero: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: R + 4,
-    paddingVertical: 18,
-    paddingHorizontal: 18,
-    borderWidth: 1,
-    borderColor: '#EEF1F5',
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 2,
-  },
-  heroTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 6,
-    letterSpacing: -0.2,
-  },
-  heroText: {
-    fontSize: 16,
-    lineHeight: 22,
-    opacity: 0.75,
-  },
+  hero: { backgroundColor: COLORS.surface, borderRadius: 22, padding: 18 },
+  heroTitle: { fontSize: 20, fontWeight: '800' },
+  heroText: { fontSize: 16, opacity: 0.8 },
 
-  // Goals card
-  card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: R,
-    paddingTop: 14,
-    paddingBottom: 4,
-    paddingHorizontal: 14,
-    borderWidth: 1,
-    borderColor: '#E8EAF0',
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 2,
-  },
-  cardTitle: {
-    textAlign: 'center',
-    fontWeight: '700',
-    fontSize: 18,
-    marginBottom: 8,
-  },
-  grid: {
-    marginTop: 4,
-    borderRadius: R - 6,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#F0F2F6',
-  },
-  cell: {
-    width: '50%',
-    paddingVertical: 16,
-    paddingHorizontal: 14,
-  },
-  brRight: { borderRightWidth: 1, borderRightColor: '#F0F2F6' },
-  brBottom: { borderBottomWidth: 1, borderBottomColor: '#F0F2F6' },
+  card: { backgroundColor: COLORS.surface, borderRadius: 22, padding: 14 },
+  cardHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  cardTitle: { fontSize: 18, fontWeight: '800' },
+  editBtn: { paddingHorizontal: 12, paddingVertical: 6, backgroundColor: COLORS.soft, borderRadius: 12 },
+  editBtnText: { fontWeight: '800', color: COLORS.navy },
 
-  // layout for two-by-two grid
-  // (use row wrap without gaps so borders meet cleanly)
-  // we place exactly 4 children so this is sufficient:
-  gridRow: { flexDirection: 'row' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 10 },
+  cell: { width: '50%', padding: 14 },
+  brRight: { borderRightWidth: 1, borderColor: '#eee' },
+  brBottom: { borderBottomWidth: 1, borderColor: '#eee' },
+  cellLabel: { fontSize: 14, opacity: 0.7 },
+  cellValue: { fontSize: 22, fontWeight: '800' },
 
-  cellLabel: {
-    fontSize: 14,
-    opacity: 0.6,
-    marginBottom: 6,
-  },
-  cellValue: {
-    fontSize: 22,
-    fontWeight: '700',
-    lineHeight: 26,
-    letterSpacing: 0,
-  },
-
-  // CTA
-  cta: {
-    alignSelf: 'stretch',
-    backgroundColor: '#0B0E1A',
-    borderRadius: 16,
-    paddingVertical: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.18,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 3,
-  },
-  ctaText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-    letterSpacing: 0.2,
-  },
-  ctaScanning: {
-    backgroundColor: '#FF9800',
-  },
-  ctaConnected: {
-    backgroundColor: '#4CAF50',
-  },
+  cta: { backgroundColor: COLORS.aqua, padding: 16, borderRadius: 16, alignItems: 'center' },
+  ctaText: { fontWeight: '900' },
   ctaSecondary: {
     alignSelf: 'stretch',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: COLORS.surface,
     borderRadius: 16,
     paddingVertical: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#0B0E1A',
+    borderWidth: 1,
+    borderColor: COLORS.border,
     marginTop: 12,
   },
+  
   ctaSecondaryText: {
-    color: '#0B0E1A',
+    color: COLORS.ink,
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '800',
     letterSpacing: 0.2,
   },
-  bleStatusContainer: {
-    padding: 12,
-    borderRadius: 12,
-    backgroundColor: '#FFF3E0',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#FFE0B2',
-  },
-  bleStatusContainerConnected: {
-    backgroundColor: '#E8F5E9',
-    borderColor: '#C8E6C9',
-  },
-  bleStatusText: {
-    color: '#E65100',
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  bleStatusTextConnected: {
-    color: '#2E7D32',
-  },
+
+  bleStatusContainer: { padding: 10, backgroundColor: '#EAF7FB', borderRadius: 12 },
+  bleStatusText: { fontWeight: '800', color: COLORS.navy },
+
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)' },
+  modalContainer: { position: 'absolute', left: 16, right: 16, top: '20%' },
+  modalSheet: { backgroundColor: '#fff', borderRadius: 20, padding: 16 },
+  modalTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  modalTitle: { fontSize: 18, fontWeight: '900' },
+  closeText: { fontSize: 18, fontWeight: '900' },
+
+  formRow: { marginBottom: 12 },
+  formLabel: { fontSize: 14, opacity: 0.7 },
+  inputWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F7F8FB', borderRadius: 14, paddingHorizontal: 12 },
+  input: { flex: 1, paddingVertical: 12, fontSize: 16 },
+  unit: { marginLeft: 8, fontWeight: '800' },
+
+  modalBtns: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 },
+  modalBtnGhost: { flex: 1, padding: 14, alignItems: 'center' },
+  modalBtnGhostText: { fontWeight: '900' },
+  modalBtn: { flex: 1, padding: 14, backgroundColor: COLORS.aqua, borderRadius: 14, alignItems: 'center' },
+  modalBtnText: { fontWeight: '900' },
 });
