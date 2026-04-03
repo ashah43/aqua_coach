@@ -1,24 +1,23 @@
-// app/workout/session.tsx
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { Buffer } from 'buffer';
-import { Stack, useRouter } from 'expo-router';
+import * as Location from 'expo-location';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { DeviceMotion, type DeviceMotionMeasurement } from 'expo-sensors';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Image,
   ImageBackground,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
-  Vibration,
   View,
 } from 'react-native';
 import { BleManager, type Device } from 'react-native-ble-plx';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Line, Path, Rect } from 'react-native-svg';
 
-// ---- Theme (match Dashboard) ----
 const COLORS = {
   navy: '#04507D',
   blue: '#4873A3',
@@ -32,6 +31,7 @@ const COLORS = {
 };
 
 const manager = new BleManager();
+const R = 22;
 
 const Pill = ({
   label,
@@ -49,7 +49,6 @@ const Pill = ({
   </Pressable>
 );
 
-/** Build a smooth-ish SVG path from a small array of numbers */
 function useSmoothPath(
   data: number[],
   width: number,
@@ -80,7 +79,7 @@ function useSmoothPath(
       const yMid = (ys[i] + ys[i + 1]) / 2;
       d += ` Q ${xs[i]} ${ys[i]} ${xMid} ${yMid}`;
     }
-    d += ` T ${xs[xs.length - 1]} ${ys[ys.length - 1]}`;
+    d += ` T ${xs[xs.length - 1]} ${ys[xs.length - 1]}`;
     return d;
   }, [data, width, height, padX, padY]);
 }
@@ -88,16 +87,13 @@ function useSmoothPath(
 function CurveChart({
   title,
   data,
-  baseline,
 }: {
   title: string;
   data: number[];
-  baseline?: number[];
 }) {
   const WIDTH = 320;
   const HEIGHT = 180;
   const path = useSmoothPath(data, WIDTH, HEIGHT);
-  const baselinePath = baseline ? useSmoothPath(baseline, WIDTH, HEIGHT) : '';
 
   return (
     <ThemedView style={styles.chartCard}>
@@ -128,12 +124,6 @@ function CurveChart({
             />
           ))}
 
-          {/* baseline first */}
-          {baseline && (
-            <Path d={baselinePath} stroke="rgba(200,0,0,0.3)" strokeWidth={2} fill="none" />
-          )}
-
-          {/* live data */}
           <Path
             d={`${path} L ${WIDTH - 16} ${HEIGHT - 16} L ${16} ${HEIGHT - 16} Z`}
             fill="rgba(11,14,26,0.06)"
@@ -145,161 +135,76 @@ function CurveChart({
   );
 }
 
+function haversineMeters(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+): number {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const Rm = 6371000;
+
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Rm * c;
+}
+
 export default function WorkoutSessionScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams<{ useSensor?: string }>();
 
-  // UI toggles (split + power metric are already “metric-only” toggles)
+  const useSensor = params.useSensor === 'true';
+
   const [showSplit, setShowSplit] = useState(true);
   const [showAvgPower, setShowAvgPower] = useState(true);
-
-  // NEW: separate accel metric vs accel graph
   const [showAvgAccel, setShowAvgAccel] = useState(true);
   const [showAccelGraph, setShowAccelGraph] = useState(true);
-
-  // Graph toggles
   const [showPowerGraph, setShowPowerGraph] = useState(true);
+  const [showMotionDistance, setShowMotionDistance] = useState(true);
+  const [showGpsDistance, setShowGpsDistance] = useState(true);
+  const [showInfo, setShowInfo] = useState(false);
 
-  // pace selection + pacer
-  const [showSplitOptions, setShowSplitOptions] = useState(false);
-  const [selectedSplit, setSelectedSplit] = useState('2:00'); // default
-  const [isPacerOn, setIsPacerOn] = useState(false);
-  const pacerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  // Live metrics
-  const [distanceM, setDistanceM] = useState(0);
+  const [motionDistanceM, setMotionDistanceM] = useState(0);
+  const [gpsDistanceM, setGpsDistanceM] = useState(0);
   const [accelMag, setAccelMag] = useState(0);
-  const [accelAvg, setAccelAvg] = useState(0); // NEW: average accel
+  const [accelAvg, setAccelAvg] = useState(0);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [power, setPower] = useState(0);
 
-  // average accel accumulator (refs so we don’t re-render constantly)
   const accelSumRef = useRef(0);
   const accelCountRef = useRef(0);
 
-  // Realtime series (40 samples ~ 4 sec)
   const ACCEL_SAMPLES = 40;
+  const POWER_SAMPLES = 40;
+
   const [accelSeries, setAccelSeries] = useState<number[]>(
     Array(ACCEL_SAMPLES).fill(0)
   );
-
-  const POWER_SAMPLES = 40;
   const [powerSeries, setPowerSeries] = useState<number[]>(
     Array(POWER_SAMPLES).fill(0)
   );
 
-  // Baseline stroke curve (ideal)
-  const [baselineSeries, setBaselineSeries] = useState<number[]>(
-    Array(ACCEL_SAMPLES).fill(0)
-  );
-
-  const idealCurves: { pace: string; strokeRate: number; manpower: number }[] = [
-    { pace: '2:00', strokeRate: 30, manpower: 350 },
-    { pace: '2:30', strokeRate: 25, manpower: 300 },
-    { pace: '3:00', strokeRate: 20, manpower: 250 },
-  ];
-
-  function generateIdealCurve(strokeRate: number, samples: number = 40): number[] {
-    const curve: number[] = [];
-    const strokeDuration = 60 / strokeRate; // seconds per stroke
-    const samplesPerStroke = (strokeDuration / 4) * samples;
-
-    for (let i = 0; i < samples; i++) {
-      const positionInStroke = (i % samplesPerStroke) / samplesPerStroke;
-
-      if (positionInStroke < 0.25) {
-        const t = positionInStroke / 0.25;
-        curve.push(0.3 + 2.2 * t * t);
-      } else if (positionInStroke < 0.35) {
-        curve.push(2.8);
-      } else if (positionInStroke < 0.5) {
-        const t = (positionInStroke - 0.35) / 0.15;
-        curve.push(2.8 - 2.0 * t);
-      } else if (positionInStroke < 0.6) {
-        const t = (positionInStroke - 0.5) / 0.1;
-        curve.push(0.8 - 1.2 * t);
-      } else {
-        const t = (positionInStroke - 0.6) / 0.4;
-        curve.push(-0.4 - 0.3 * t);
-      }
-    }
-
-    return curve;
-  }
-
-  useEffect(() => {
-    const paceObj = idealCurves.find((c) => c.pace === selectedSplit);
-    if (!paceObj) return;
-    setBaselineSeries(generateIdealCurve(paceObj.strokeRate, ACCEL_SAMPLES));
-  }, [selectedSplit]);
-
-  // ✅ Pacer tick: vibration (no extra deps). This is the “does something” part.
-  const pacerTick = () => {
-    // short buzz; safe even if phone is silent
-    Vibration.vibrate(12);
-  };
-
-  useEffect(() => {
-    // always clear existing interval first
-    if (pacerIntervalRef.current) {
-      clearInterval(pacerIntervalRef.current);
-      pacerIntervalRef.current = null;
-    }
-
-    if (!isPacerOn) return;
-
-    const paceObj = idealCurves.find((p) => p.pace === selectedSplit);
-    if (!paceObj) return;
-
-    const intervalMs = Math.max(120, Math.round(60000 / paceObj.strokeRate));
-    pacerIntervalRef.current = setInterval(() => {
-      pacerTick();
-    }, intervalMs);
-
-    return () => {
-      if (pacerIntervalRef.current) {
-        clearInterval(pacerIntervalRef.current);
-        pacerIntervalRef.current = null;
-      }
-    };
-  }, [isPacerOn, selectedSplit]);
-
-  useEffect(() => {
-    setPowerSeries((prev) => {
-      const next = prev.slice(1);
-      next.push(power);
-      return next;
-    });
-  }, [power]);
-
-  // Start running
   const [isRunning, setIsRunning] = useState(true);
 
-  // Done button (UI only)
-  const handleDone = () => {
-    setIsRunning(false);
-
-    // stop pacer when leaving
-    setIsPacerOn(false);
-    setShowSplitOptions(false);
-
-    router.back();
-  };
-
-  // --- Integration state ---
   const lastTsRef = useRef<number | null>(null);
   const vxRef = useRef(0);
   const vyRef = useRef(0);
   const sRef = useRef(0);
 
-  // Low-pass state
   const axLpRef = useRef(0);
   const ayLpRef = useRef(0);
-
-  // Stillness detector
   const stillAccumRef = useRef(0);
 
-  // --- Tuning constants ---
   const SAMPLE_MS = 100;
   const ACC_DEADBAND = 0.08;
   const LPF_ALPHA = 0.85;
@@ -309,57 +214,26 @@ export default function WorkoutSessionScreen() {
   const MIN_SPEED = 0.12;
   const SCALE = 0.18;
 
-  // --- Arduino BLE ---
+  const gpsLastRef = useRef<(Location.LocationObjectCoords & { timestamp?: number }) | null>(
+    null
+  );
+  const gpsDistanceRef = useRef(0);
+
   const [arduinoDevice, setArduinoDevice] = useState<Device | null>(null);
-  const [bleStatus, setBleStatus] = useState<string>('No device connected');
+  const [bleStatus, setBleStatus] = useState<string>('');
 
   useEffect(() => {
-    const SERVICE_UUID = '12345678-1234-5678-1234-56789abcdef0';
-    const CHAR_UUID = 'abcdefab-cdef-1234-5678-1234567890ab';
+    setPowerSeries((prev) => {
+      const next = prev.slice(1);
+      next.push(power);
+      return next;
+    });
+  }, [power]);
 
-    manager
-      .connectedDevices([SERVICE_UUID])
-      .then((devices: Device[]) => {
-        if (devices.length > 0) {
-          const device = devices[0];
-          setArduinoDevice(device);
-          setBleStatus('Connected! Listening...');
-
-          device.monitorCharacteristicForService(
-            SERVICE_UUID,
-            CHAR_UUID,
-            (err: any, char: any) => {
-              if (err) {
-                console.log('Notify error:', err);
-                return;
-              }
-              if (!char?.value) return;
-
-              const data = Buffer.from(char.value, 'base64');
-
-              // safety: you read index 2, so require length >= 3
-              if (data.length >= 3) {
-                const byte1 = data.readUInt8(1);
-                const byte2 = data.readUInt8(2);
-                const newPower = byte1 + byte2 * 256;
-                setPower(newPower);
-              }
-            }
-          );
-        } else {
-          setBleStatus('No device connected');
-          setArduinoDevice(null);
-        }
-      })
-      .catch((err: any) => {
-        console.log('Error checking connected devices:', err);
-        setBleStatus('No device connected');
-      });
-
-    return () => {
-      manager.stopDeviceScan();
-    };
-  }, []);
+  const handleDone = () => {
+    setIsRunning(false);
+    router.back();
+  };
 
   async function ensureMotionPermission() {
     const { status } = await DeviceMotion.getPermissionsAsync();
@@ -369,7 +243,14 @@ export default function WorkoutSessionScreen() {
     }
   }
 
-  // Timer (pause/resume)
+  async function ensureLocationPermission() {
+    const { status } = await Location.getForegroundPermissionsAsync();
+    if (status !== 'granted') {
+      const res = await Location.requestForegroundPermissionsAsync();
+      if (res.status !== 'granted') throw new Error('Location permission not granted');
+    }
+  }
+
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | null = null;
 
@@ -385,11 +266,93 @@ export default function WorkoutSessionScreen() {
     };
   }, [isRunning]);
 
-  // DeviceMotion listener
+  useEffect(() => {
+    if (!useSensor) {
+      setBleStatus('');
+      setArduinoDevice(null);
+      manager.stopDeviceScan();
+      return;
+    }
+
+    const SERVICE_UUID = '12345678-1234-5678-1234-56789abcdef0';
+    const CHAR_UUID = 'abcdefab-cdef-1234-5678-1234567890ab';
+
+    let cancelled = false;
+
+    const connectToBle = async () => {
+      try {
+        setBleStatus('Scanning for force sensor...');
+
+        manager.startDeviceScan([SERVICE_UUID], null, async (error, device) => {
+          if (error) {
+            console.log('BLE scan error:', error);
+            setBleStatus('BLE scan failed');
+            return;
+          }
+
+          if (!device?.serviceUUIDs?.includes(SERVICE_UUID) && device?.name == null) {
+            return;
+          }
+
+          if (cancelled) return;
+
+          manager.stopDeviceScan();
+
+          try {
+            setBleStatus('Connecting to force sensor...');
+            const connected = await device.connect();
+            await connected.discoverAllServicesAndCharacteristics();
+
+            if (cancelled) return;
+
+            setArduinoDevice(connected);
+            setBleStatus('Force sensor connected');
+
+            connected.monitorCharacteristicForService(
+              SERVICE_UUID,
+              CHAR_UUID,
+              (err, char) => {
+                if (err) {
+                  console.log('Notify error:', err);
+                  setBleStatus('Connected, but data stream failed');
+                  return;
+                }
+
+                if (!char?.value) return;
+
+                const data = Buffer.from(char.value, 'base64');
+                if (data.length >= 3) {
+                  const byte1 = data.readUInt8(1);
+                  const byte2 = data.readUInt8(2);
+                  const newPower = byte1 + byte2 * 256;
+                  setPower(newPower);
+                }
+              }
+            );
+          } catch (connectErr) {
+            console.log('BLE connection error:', connectErr);
+            setBleStatus('Unable to connect to force sensor');
+          }
+        });
+      } catch (err) {
+        console.log('BLE setup error:', err);
+        setBleStatus('BLE unavailable');
+      }
+    };
+
+    connectToBle();
+
+    return () => {
+      cancelled = true;
+      manager.stopDeviceScan();
+    };
+  }, [useSensor]);
+
   useEffect(() => {
     if (!isRunning) return;
 
     let removed = false;
+    let motionSub: { remove: () => void } | null = null;
 
     (async () => {
       try {
@@ -400,19 +363,19 @@ export default function WorkoutSessionScreen() {
 
       DeviceMotion.setUpdateInterval(SAMPLE_MS);
 
-      const sub = DeviceMotion.addListener((evt: DeviceMotionMeasurement) => {
+      motionSub = DeviceMotion.addListener((evt: DeviceMotionMeasurement) => {
         if (removed) return;
 
         const a =
           evt.acceleration ??
           evt.accelerationIncludingGravity ?? { x: 0, y: 0, z: 0 };
+
         let ax = a.x ?? 0;
         let ay = a.y ?? 0;
 
         const mag = Math.sqrt(ax * ax + ay * ay + (a.z ?? 0) ** 2);
         setAccelMag(mag);
 
-        // update average accel
         accelSumRef.current += mag;
         accelCountRef.current += 1;
         setAccelAvg(accelSumRef.current / Math.max(1, accelCountRef.current));
@@ -422,6 +385,7 @@ export default function WorkoutSessionScreen() {
           lastTsRef.current = now;
           return;
         }
+
         const dt = (now - lastTsRef.current) / 1000;
         lastTsRef.current = now;
 
@@ -456,7 +420,7 @@ export default function WorkoutSessionScreen() {
         if (speed < MIN_SPEED) speed = 0;
 
         sRef.current += speed * dt * SCALE;
-        setDistanceM(sRef.current);
+        setMotionDistanceM(sRef.current);
 
         setAccelSeries((prev) => {
           const next = prev.slice(1);
@@ -464,35 +428,174 @@ export default function WorkoutSessionScreen() {
           return next;
         });
       });
-
-      return () => {
-        removed = true;
-        sub.remove();
-      };
     })();
 
     return () => {
       removed = true;
+      motionSub?.remove();
     };
   }, [isRunning]);
 
-  // Derived UI text
+  useEffect(() => {
+    if (!isRunning) return;
+
+    let sub: Location.LocationSubscription | null = null;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        await ensureLocationPermission();
+      } catch {
+        return;
+      }
+
+      sub = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.BestForNavigation,
+          timeInterval: 1000,
+          distanceInterval: 1,
+        },
+        (loc) => {
+          if (cancelled) return;
+
+          const coords = loc.coords;
+          const prev = gpsLastRef.current;
+
+          if (prev) {
+            const delta = haversineMeters(
+              prev.latitude,
+              prev.longitude,
+              coords.latitude,
+              coords.longitude
+            );
+
+            const prevTimestamp = prev.timestamp ?? loc.timestamp - 1000;
+            const dtSec = Math.max(0.5, (loc.timestamp - prevTimestamp) / 1000);
+            const impliedSpeed = delta / dtSec;
+
+            if (
+              coords.accuracy <= 12 &&
+              delta > 0.5 &&
+              delta < 8 &&
+              impliedSpeed < 4
+            ) {
+              gpsDistanceRef.current += delta;
+              setGpsDistanceM(gpsDistanceRef.current);
+            }
+          }
+
+          gpsLastRef.current = {
+            ...coords,
+            timestamp: loc.timestamp,
+          };
+        }
+      );
+    })();
+
+    return () => {
+      cancelled = true;
+      sub?.remove();
+    };
+  }, [isRunning]);
+
   const elapsedSec = Math.max(0, Math.floor(elapsedMs / 1000));
-  const distanceText = `${distanceM.toFixed(1)}m`;
+  const splitDistanceM = motionDistanceM;
 
   const splitText = useMemo(() => {
     if (!showSplit) return '';
-    if (distanceM < 1 || elapsedSec === 0) return '—';
-    const paceSecPer500 = elapsedSec * (500 / distanceM);
-    const cappedPace = Math.min(paceSecPer500, 600);
-    const mm = Math.floor(cappedPace / 60);
-    const ss = Math.floor(cappedPace % 60).toString().padStart(2, '0');
+    if (splitDistanceM < 1 || elapsedSec === 0) return '—';
+
+    const paceSecPer500 = elapsedSec * (500 / splitDistanceM);
+
+    if (!Number.isFinite(paceSecPer500)) return '—';
+
+    const mm = Math.floor(paceSecPer500 / 60);
+    const ss = Math.floor(paceSecPer500 % 60)
+      .toString()
+      .padStart(2, '0');
+
     return `${mm}:${ss} /500m`;
-  }, [showSplit, distanceM, elapsedSec]);
+  }, [showSplit, splitDistanceM, elapsedSec]);
+
+  const showDistanceCards = showMotionDistance || showGpsDistance;
 
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
+
+      <Modal
+        visible={showInfo}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setShowInfo(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <ThemedText style={styles.modalTitle}>Workout Metrics</ThemedText>
+              <Pressable onPress={() => setShowInfo(false)} style={styles.modalCloseBtn}>
+                <ThemedText style={styles.modalCloseText}>✕</ThemedText>
+              </Pressable>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <ThemedText style={styles.modalSectionTitle}>Time</ThemedText>
+              <ThemedText style={styles.modalBody}>
+                Time shows how long the workout session has been running.
+              </ThemedText>
+
+              <ThemedText style={styles.modalSectionTitle}>Split (per 500m)</ThemedText>
+              <ThemedText style={styles.modalBody}>
+                Split is an estimated pace. It uses the current elapsed time and the
+                motion-based distance to estimate how long 500 meters would take at the
+                current rate.
+              </ThemedText>
+
+              <ThemedText style={styles.modalSectionTitle}>Motion Distance</ThemedText>
+              <ThemedText style={styles.modalBody}>
+                Motion distance is estimated from phone motion data. The app smooths
+                accelerometer readings, estimates velocity, and accumulates distance over
+                time.
+              </ThemedText>
+
+              <ThemedText style={styles.modalSectionTitle}>GPS Distance</ThemedText>
+              <ThemedText style={styles.modalBody}>
+                GPS distance is calculated from location updates using the distance between
+                consecutive coordinates. Indoors, this may drift or jump more than usual.
+              </ThemedText>
+
+              <ThemedText style={styles.modalSectionTitle}>Avg Acceleration</ThemedText>
+              <ThemedText style={styles.modalBody}>
+                Average acceleration is the running average of the phone&apos;s measured
+                acceleration magnitude during the session.
+              </ThemedText>
+
+              <ThemedText style={styles.modalSectionTitle}>Live Acceleration</ThemedText>
+              <ThemedText style={styles.modalBody}>
+                Live acceleration shows the current acceleration magnitude from the phone
+                sensors in real time.
+              </ThemedText>
+
+              <ThemedText style={styles.modalSectionTitle}>Power</ThemedText>
+              <ThemedText style={styles.modalBody}>
+                Power is read from the connected force sensor over BLE. If no sensor is
+                connected, this value will stay near zero.
+              </ThemedText>
+
+              <ThemedText style={styles.modalSectionTitle}>Acceleration Graph</ThemedText>
+              <ThemedText style={styles.modalBody}>
+                This graph shows recent live acceleration values over time.
+              </ThemedText>
+
+              <ThemedText style={styles.modalSectionTitle}>Power Graph</ThemedText>
+              <ThemedText style={styles.modalBody}>
+                This graph shows recent live power readings over time from the BLE force
+                sensor.
+              </ThemedText>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       <ImageBackground
         source={require('@/assets/images/rowing-background.png')}
@@ -503,7 +606,6 @@ export default function WorkoutSessionScreen() {
         <ScrollView
           contentContainerStyle={[styles.screen, { paddingTop: insets.top + 20 }]}
         >
-          {/* Header card */}
           <ThemedView style={styles.header}>
             <View style={styles.headerTopRow}>
               <Image
@@ -511,14 +613,23 @@ export default function WorkoutSessionScreen() {
                 style={styles.logo}
                 resizeMode="contain"
               />
+
               <View style={{ flex: 1 }}>
                 <ThemedText type="title" style={styles.headerTitle}>
                   Workout Session
                 </ThemedText>
                 <ThemedText style={styles.headerSubtitle}>
-                  {arduinoDevice ? 'Device connected' : 'Phone sensors only'}
+                  {useSensor
+                    ? arduinoDevice
+                      ? 'Force sensor connected'
+                      : 'Workout in progress'
+                    : 'Workout in progress'}
                 </ThemedText>
               </View>
+
+              <Pressable style={styles.infoBtn} onPress={() => setShowInfo(true)}>
+                <ThemedText style={styles.infoBtnText}>?</ThemedText>
+              </Pressable>
 
               <View style={styles.headerBtns}>
                 <Pressable
@@ -538,16 +649,13 @@ export default function WorkoutSessionScreen() {
               </View>
             </View>
 
-            {!arduinoDevice && (
+            {useSensor && !!bleStatus && arduinoDevice && (
               <View style={styles.bleBanner}>
-                <ThemedText style={styles.bleBannerText}>
-                  {bleStatus}
-                </ThemedText>
+                <ThemedText style={styles.bleBannerText}>{bleStatus}</ThemedText>
               </View>
             )}
           </ThemedView>
 
-          {/* Back row */}
           <View style={styles.backRow}>
             <Pressable onPress={() => router.back()} hitSlop={12} style={styles.backBtn}>
               <ThemedText style={styles.backArrow}>‹</ThemedText>
@@ -555,16 +663,17 @@ export default function WorkoutSessionScreen() {
             </Pressable>
           </View>
 
-          {/* Toggles */}
           <View style={styles.controlsWrap}>
-            <Pill label="Split" active={showSplit} onPress={() => setShowSplit((v) => !v)} />
+            <Pill
+              label="Split"
+              active={showSplit}
+              onPress={() => setShowSplit((v) => !v)}
+            />
             <Pill
               label="Avg Power"
               active={showAvgPower}
               onPress={() => setShowAvgPower((v) => !v)}
             />
-
-            {/* NEW: separate avg accel vs accel graph */}
             <Pill
               label="Avg Accel"
               active={showAvgAccel}
@@ -575,49 +684,23 @@ export default function WorkoutSessionScreen() {
               active={showAccelGraph}
               onPress={() => setShowAccelGraph((v) => !v)}
             />
-
             <Pill
               label="Power Graph"
               active={showPowerGraph}
               onPress={() => setShowPowerGraph((v) => !v)}
             />
-
             <Pill
-              label={isPacerOn ? `Pacer: ${selectedSplit}` : 'Pacer'}
-              active={isPacerOn || showSplitOptions}
-              onPress={() => {
-                if (showSplitOptions) {
-                  setShowSplitOptions(false);
-                  return;
-                }
-                if (isPacerOn) {
-                  setIsPacerOn(false);
-                  setShowSplitOptions(false);
-                  return;
-                }
-                setShowSplitOptions(true);
-              }}
+              label="Motion Dist"
+              active={showMotionDistance}
+              onPress={() => setShowMotionDistance((v) => !v)}
+            />
+            <Pill
+              label="GPS Dist"
+              active={showGpsDistance}
+              onPress={() => setShowGpsDistance((v) => !v)}
             />
           </View>
 
-          {showSplitOptions && (
-            <View style={styles.splitOptionsRow}>
-              {['2:00', '2:30', '3:00'].map((opt) => (
-                <Pill
-                  key={opt}
-                  label={opt}
-                  active={selectedSplit === opt}
-                  onPress={() => {
-                    setSelectedSplit(opt);
-                    setIsPacerOn(true); // ✅ this now actually vibrates on interval
-                    setShowSplitOptions(false);
-                  }}
-                />
-              ))}
-            </View>
-          )}
-
-          {/* Metrics */}
           <View style={styles.metricsRow}>
             <ThemedView style={styles.metricCardSm}>
               <View style={[styles.cardAccent, { backgroundColor: COLORS.aqua }]} />
@@ -632,18 +715,7 @@ export default function WorkoutSessionScreen() {
               </View>
             </ThemedView>
 
-            <ThemedView style={styles.metricCardSm}>
-              <View style={[styles.cardAccent, { backgroundColor: COLORS.aqua2 }]} />
-              <ThemedText style={styles.metricLabelSm}>Distance</ThemedText>
-              <ThemedText style={styles.metricValueSm}>{distanceText}</ThemedText>
-              <View style={styles.progressBarTrackSm}>
-                <View style={[styles.progressBarFill, { width: '100%' }]} />
-              </View>
-            </ThemedView>
-          </View>
-
-          <View style={styles.metricsRow}>
-            {showSplit && (
+            {showSplit ? (
               <ThemedView style={styles.metricCardSm}>
                 <View style={[styles.cardAccent, { backgroundColor: COLORS.blue }]} />
                 <ThemedText style={styles.metricLabelSm}>Split (per 500m)</ThemedText>
@@ -652,9 +724,53 @@ export default function WorkoutSessionScreen() {
                   <View style={[styles.progressBarFill, { width: '100%' }]} />
                 </View>
               </ThemedView>
+            ) : (
+              <View style={styles.metricSpacer} />
             )}
+          </View>
 
-            {showAvgAccel && (
+          {showDistanceCards && (
+            <>
+              {showMotionDistance && showGpsDistance ? (
+                <View style={styles.metricsRow}>
+                  <ThemedView style={styles.metricCardSm}>
+                    <View style={[styles.cardAccent, { backgroundColor: COLORS.coral }]} />
+                    <ThemedText style={styles.metricLabelSm}>Motion Distance</ThemedText>
+                    <ThemedText style={styles.metricValueSm}>
+                      {motionDistanceM.toFixed(1)}m
+                    </ThemedText>
+                  </ThemedView>
+
+                  <ThemedView style={styles.metricCardSm}>
+                    <View style={[styles.cardAccent, { backgroundColor: COLORS.aqua2 }]} />
+                    <ThemedText style={styles.metricLabelSm}>GPS Distance</ThemedText>
+                    <ThemedText style={styles.metricValueSm}>
+                      {gpsDistanceM.toFixed(1)}m
+                    </ThemedText>
+                  </ThemedView>
+                </View>
+              ) : showMotionDistance ? (
+                <ThemedView style={styles.metricCardFull}>
+                  <View style={[styles.cardAccent, { backgroundColor: COLORS.coral }]} />
+                  <ThemedText style={styles.metricLabelSm}>Motion Distance</ThemedText>
+                  <ThemedText style={styles.metricValueSm}>
+                    {motionDistanceM.toFixed(1)}m
+                  </ThemedText>
+                </ThemedView>
+              ) : showGpsDistance ? (
+                <ThemedView style={styles.metricCardFull}>
+                  <View style={[styles.cardAccent, { backgroundColor: COLORS.aqua2 }]} />
+                  <ThemedText style={styles.metricLabelSm}>GPS Distance</ThemedText>
+                  <ThemedText style={styles.metricValueSm}>
+                    {gpsDistanceM.toFixed(1)}m
+                  </ThemedText>
+                </ThemedView>
+              ) : null}
+            </>
+          )}
+
+          <View style={styles.metricsRow}>
+            {showAvgAccel ? (
               <ThemedView style={styles.metricCardSm}>
                 <View style={[styles.cardAccent, { backgroundColor: COLORS.coral }]} />
                 <ThemedText style={styles.metricLabelSm}>Avg Acceleration</ThemedText>
@@ -670,11 +786,11 @@ export default function WorkoutSessionScreen() {
                   />
                 </View>
               </ThemedView>
+            ) : (
+              <View style={styles.metricSpacer} />
             )}
-          </View>
 
-          <View style={styles.metricsRow}>
-            {showAvgPower && (
+            {showAvgPower ? (
               <ThemedView style={styles.metricCardSm}>
                 <View style={[styles.cardAccent, { backgroundColor: COLORS.navy }]} />
                 <ThemedText style={styles.metricLabelSm}>Power</ThemedText>
@@ -688,16 +804,25 @@ export default function WorkoutSessionScreen() {
                   />
                 </View>
               </ThemedView>
+            ) : (
+              <View style={styles.metricSpacer} />
             )}
           </View>
 
-          {/* Live charts */}
+          <View style={styles.metricsRow}>
+            <ThemedView style={styles.metricCardSm}>
+              <View style={[styles.cardAccent, { backgroundColor: COLORS.aqua2 }]} />
+              <ThemedText style={styles.metricLabelSm}>Live Acceleration</ThemedText>
+              <ThemedText style={styles.metricValueSm}>
+                {accelMag.toFixed(2)} m/s²
+              </ThemedText>
+            </ThemedView>
+
+            <View style={styles.metricSpacer} />
+          </View>
+
           {showAccelGraph && (
-            <CurveChart
-              title="Acceleration Over Time"
-              data={accelSeries}
-              baseline={baselineSeries}
-            />
+            <CurveChart title="Acceleration Over Time" data={accelSeries} />
           )}
           {showPowerGraph && <CurveChart title="Power Over Time" data={powerSeries} />}
 
@@ -707,8 +832,6 @@ export default function WorkoutSessionScreen() {
     </>
   );
 }
-
-const R = 22;
 
 const styles = StyleSheet.create({
   bg: { flex: 1 },
@@ -721,7 +844,6 @@ const styles = StyleSheet.create({
     rowGap: 16,
   },
 
-  // Header (Dashboard-style)
   header: {
     backgroundColor: COLORS.surface,
     borderRadius: 26,
@@ -744,11 +866,27 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 22, letterSpacing: -0.2 },
   headerSubtitle: { fontSize: 14, opacity: 0.7, marginTop: 2 },
 
+  infoBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  infoBtnText: {
+    color: COLORS.ink,
+    fontWeight: '800',
+    fontSize: 16,
+    lineHeight: 18,
+  },
+
   headerBtns: {
     flexDirection: 'column',
     gap: 8,
   },
-
   headerBtn: {
     borderWidth: 1,
     borderColor: COLORS.border,
@@ -779,7 +917,6 @@ const styles = StyleSheet.create({
   },
   bleBannerText: { color: COLORS.navy, fontWeight: '600', fontSize: 13 },
 
-  // Back row
   backRow: {
     flexDirection: 'row',
     justifyContent: 'flex-start',
@@ -794,19 +931,12 @@ const styles = StyleSheet.create({
   backArrow: { fontSize: 28, lineHeight: 28, color: COLORS.ink },
   backLabel: { fontSize: 14, opacity: 0.7 },
 
-  // pills
   controlsWrap: {
     flexDirection: 'row',
     justifyContent: 'center',
     gap: 8,
     flexWrap: 'wrap',
     marginTop: 2,
-  },
-  splitOptionsRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 8,
-    marginTop: 8,
   },
   pill: {
     minWidth: 86,
@@ -822,7 +952,6 @@ const styles = StyleSheet.create({
   pillText: { fontSize: 13, opacity: 0.85, color: COLORS.ink },
   pillTextActive: { color: '#FFFFFF', opacity: 1, fontWeight: '700' },
 
-  // metrics
   metricsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -843,6 +972,24 @@ const styles = StyleSheet.create({
     elevation: 2,
     overflow: 'hidden',
   },
+  metricCardFull: {
+    width: '100%',
+    backgroundColor: COLORS.surface,
+    borderRadius: R,
+    paddingVertical: 16,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 2,
+    overflow: 'hidden',
+  },
+  metricSpacer: {
+    width: '48%',
+  },
   cardAccent: {
     position: 'absolute',
     top: 0,
@@ -854,7 +1001,7 @@ const styles = StyleSheet.create({
   metricValueSm: {
     fontSize: 24,
     fontWeight: '700',
-    marginBottom: 12,
+    marginBottom: 8,
     lineHeight: 26,
     letterSpacing: 0,
   },
@@ -863,6 +1010,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: COLORS.track,
     overflow: 'hidden',
+    marginTop: 4,
   },
   progressBarFill: {
     height: '100%',
@@ -871,7 +1019,6 @@ const styles = StyleSheet.create({
     opacity: 0.9,
   },
 
-  // charts
   chartCard: {
     backgroundColor: COLORS.surface,
     borderRadius: R,
@@ -892,4 +1039,56 @@ const styles = StyleSheet.create({
     letterSpacing: -0.1,
   },
   chartArea: { height: 180, borderRadius: 14, overflow: 'hidden' },
+
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(11,14,26,0.35)',
+    justifyContent: 'center',
+    paddingHorizontal: 22,
+  },
+  modalCard: {
+    maxHeight: '78%',
+    backgroundColor: COLORS.surface,
+    borderRadius: 24,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: COLORS.ink,
+  },
+  modalCloseBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F3F5F8',
+  },
+  modalCloseText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.ink,
+  },
+  modalSectionTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: COLORS.ink,
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  modalBody: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: COLORS.ink,
+    opacity: 0.78,
+  },
 });
