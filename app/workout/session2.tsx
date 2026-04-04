@@ -503,7 +503,7 @@ export default function WorkoutSessionScreen() {
             const impliedSpeed = delta / dtSec;
 
             if (
-              coords.accuracy <= 12 &&
+              coords.accuracy != null && coords.accuracy <= 12 &&
               delta > 0.5 &&
               delta < 8 &&
               impliedSpeed < 4
