@@ -1,12 +1,13 @@
-// app/(tabs)/index.tsx
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { supabase } from '@/lib/supabase';
 import type { User } from '@supabase/supabase-js';
-import { useEffect, useState } from 'react';
+import { useRouter } from 'expo-router';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Image,
   ImageBackground,
+  Pressable,
   ScrollView,
   StyleSheet,
   View,
@@ -30,28 +31,76 @@ const RANGE_LABEL: Record<RangeKey, string> = {
   month: 'This Month',
 };
 
-const MOCK_STATS: Record<
-  RangeKey,
-  { sessions: string; distance: string; avgTime: string; avgPower: string }
-> = {
-  day: { sessions: '2', distance: '6.1 km', avgTime: '28 m', avgPower: '228 W' },
-  week: {
-    sessions: '12',
-    distance: '24.5 km',
-    avgTime: '32 m',
-    avgPower: '215 W',
-  },
-  month: {
-    sessions: '41',
-    distance: '92.3 km',
-    avgTime: '30 m',
-    avgPower: '221 W',
-  },
+type WorkoutRow = {
+  id: string;
+  user_id: string;
+  started_at: string | null;
+  ended_at: string | null;
+  duration_seconds: number | null;
+  distance_m: number | null;
+  avg_power_w: number | null;
+  avg_acceleration?: number | null;
 };
 
+type DisplayStats = {
+  sessions: string;
+  distance: string;
+  totalDuration: string;
+};
+
+function getRangeStart(range: RangeKey) {
+  const now = new Date();
+  const start = new Date(now);
+
+  if (range === 'day') {
+    start.setHours(0, 0, 0, 0);
+    return start;
+  }
+
+  if (range === 'week') {
+    const day = start.getDay();
+    const diff = day === 0 ? 6 : day - 1;
+    start.setDate(start.getDate() - diff);
+    start.setHours(0, 0, 0, 0);
+    return start;
+  }
+
+  start.setDate(1);
+  start.setHours(0, 0, 0, 0);
+  return start;
+}
+
+function formatDistanceKm(distanceMeters: number) {
+  const km = distanceMeters / 1000;
+  return `${km.toFixed(1)} km`;
+}
+
+function formatTotalDuration(totalSeconds: number) {
+  const rounded = Math.round(totalSeconds);
+
+  if (rounded <= 0) return '0 m';
+
+  const hours = Math.floor(rounded / 3600);
+  const minutes = Math.floor((rounded % 3600) / 60);
+
+  if (hours > 0) {
+    return `${hours} h ${minutes} m`;
+  }
+
+  return `${minutes} m`;
+}
+
 export default function HomeScreen() {
+  const router = useRouter();
+
   const [user, setUser] = useState<User | null>(null);
   const [range, setRange] = useState<RangeKey>('week');
+  const [stats, setStats] = useState<DisplayStats>({
+    sessions: '0',
+    distance: '0.0 km',
+    totalDuration: '0 m',
+  });
+  const [loadingStats, setLoadingStats] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -71,11 +120,87 @@ export default function HomeScreen() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchStats = async () => {
+      if (!user) {
+        setStats({
+          sessions: '0',
+          distance: '0.0 km',
+          totalDuration: '0 m',
+        });
+        return;
+      }
+
+      setLoadingStats(true);
+
+      const startDate = getRangeStart(range).toISOString();
+
+      const { data, error } = await supabase
+        .from('workouts')
+        .select('id, user_id, started_at, ended_at, duration_seconds, distance_m, avg_power_w, avg_acceleration')
+        .eq('user_id', user.id)
+        .gte('started_at', startDate)
+        .order('started_at', { ascending: false });
+
+      if (cancelled) return;
+
+      if (error) {
+        console.log('Error fetching home stats:', error);
+        setStats({
+          sessions: '0',
+          distance: '0.0 km',
+          totalDuration: '0 m',
+        });
+        setLoadingStats(false);
+        return;
+      }
+
+      const workouts: WorkoutRow[] = data ?? [];
+
+      const sessionCount = workouts.length;
+
+      const totalDistanceM = workouts.reduce(
+        (sum, workout) => sum + (workout.distance_m ?? 0),
+        0
+      );
+
+      const totalDurationSeconds = workouts.reduce(
+        (sum, workout) => sum + (workout.duration_seconds ?? 0),
+        0
+      );
+
+      setStats({
+        sessions: String(sessionCount),
+        distance: formatDistanceKm(totalDistanceM),
+        totalDuration: formatTotalDuration(totalDurationSeconds),
+      });
+
+      setLoadingStats(false);
+    };
+
+    fetchStats();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user, range]);
+
   const meta = user?.user_metadata as any;
   const displayName =
     meta?.full_name || meta?.name || user?.email || '';
 
-  const stats = MOCK_STATS[range];
+  const displayedStats = useMemo(() => {
+    if (loadingStats) {
+      return {
+        sessions: '...',
+        distance: '...',
+        totalDuration: '...',
+      };
+    }
+    return stats;
+  }, [loadingStats, stats]);
 
   return (
     <ImageBackground
@@ -85,7 +210,6 @@ export default function HomeScreen() {
       resizeMode="cover"
     >
       <ScrollView contentContainerStyle={styles.screen}>
-        {/* HEADER CARD */}
         <ThemedView style={styles.header}>
           <View style={styles.headerTopRow}>
             <Image
@@ -94,23 +218,23 @@ export default function HomeScreen() {
               resizeMode="contain"
             />
 
-            {/* TEXT COLUMN */}
             <View style={styles.headerTextWrap}>
               <ThemedText type="title" style={styles.title}>
                 Dashboard
               </ThemedText>
 
-              <ThemedText
-                style={styles.subtitle}
-                numberOfLines={2}
-              >
-                Welcome back, {displayName}
-              </ThemedText>
+              {!!displayName && (
+                <ThemedText
+                  style={styles.subtitle}
+                  numberOfLines={2}
+                >
+                  {displayName}
+                </ThemedText>
+              )}
             </View>
           </View>
         </ThemedView>
 
-        {/* RANGE SELECTOR */}
         <View style={styles.rangeContainer}>
           <View style={styles.rangeRow}>
             {(['day', 'week', 'month'] as const).map((key) => {
@@ -132,30 +256,36 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* METRICS GRID */}
         <View style={styles.grid}>
           <ThemedView style={styles.card}>
             <View style={[styles.cardAccent, { backgroundColor: COLORS.aqua }]} />
             <ThemedText style={styles.cardLabel}>🚣 Sessions</ThemedText>
-            <ThemedText style={styles.cardValue}>{stats.sessions}</ThemedText>
+            <ThemedText style={styles.cardValue}>{displayedStats.sessions}</ThemedText>
           </ThemedView>
 
           <ThemedView style={styles.card}>
             <View style={[styles.cardAccent, { backgroundColor: COLORS.aqua2 }]} />
             <ThemedText style={styles.cardLabel}>📏 Distance</ThemedText>
-            <ThemedText style={styles.cardValue}>{stats.distance}</ThemedText>
+            <ThemedText style={styles.cardValue}>{displayedStats.distance}</ThemedText>
           </ThemedView>
 
           <ThemedView style={styles.card}>
             <View style={[styles.cardAccent, { backgroundColor: COLORS.blue }]} />
-            <ThemedText style={styles.cardLabel}>⏱️ Avg Time</ThemedText>
-            <ThemedText style={styles.cardValue}>{stats.avgTime}</ThemedText>
+            <ThemedText style={styles.cardLabel}>⏱️ Total Duration</ThemedText>
+            <ThemedText style={styles.cardValue}>{displayedStats.totalDuration}</ThemedText>
           </ThemedView>
 
           <ThemedView style={styles.card}>
             <View style={[styles.cardAccent, { backgroundColor: COLORS.coral }]} />
-            <ThemedText style={styles.cardLabel}>⚡ Avg Power</ThemedText>
-            <ThemedText style={styles.cardValue}>{stats.avgPower}</ThemedText>
+
+            <Pressable
+              style={styles.signInButton}
+              onPress={() => router.push('/(tabs)/settings')}
+            >
+              <ThemedText style={styles.signInButtonText}>
+                {user ? `Welcome, ${displayName}!` : 'Sign in to view stats'}
+              </ThemedText>
+            </Pressable>
           </ThemedView>
         </View>
       </ScrollView>
@@ -206,7 +336,7 @@ const styles = StyleSheet.create({
 
   headerTextWrap: {
     flex: 1,
-    minWidth: 0,      // CRITICAL FIX
+    minWidth: 0,
   },
 
   title: {
@@ -298,5 +428,23 @@ const styles = StyleSheet.create({
     lineHeight: 40,
     marginTop: 8,
     textAlign: 'center',
+  },
+
+  signInButton: {
+    backgroundColor: COLORS.aqua,
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 72,
+    width: '100%',
+  },
+
+  signInButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    textAlign: 'center',
+    color: '#0B0E1A',
   },
 });

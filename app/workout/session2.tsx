@@ -1,5 +1,6 @@
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
+import { supabase } from '@/lib/supabase';
 import { Buffer } from 'buffer';
 import * as Location from 'expo-location';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
@@ -230,10 +231,38 @@ export default function WorkoutSessionScreen() {
     });
   }, [power]);
 
-  const handleDone = () => {
-    setIsRunning(false);
-    router.back();
-  };
+ const handleDone = async () => {
+  setIsRunning(false);
+
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    console.log('No signed-in user found:', userError);
+    return;
+  }
+
+  const { error } = await supabase
+    .from('workouts')
+    .insert({
+      user_id: user.id,
+      started_at: new Date(Date.now() - elapsedMs).toISOString(),
+      ended_at: new Date().toISOString(),
+      duration_seconds: Math.floor(elapsedMs / 1000),
+      distance_m: motionDistanceM,
+      avg_power_w: power,
+      avg_acceleration: accelAvg,
+    });
+
+  if (error) {
+    console.log('Error saving workout:', error);
+    return;
+  }
+
+  router.back();
+};
 
   async function ensureMotionPermission() {
     const { status } = await DeviceMotion.getPermissionsAsync();

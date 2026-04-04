@@ -366,8 +366,8 @@
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
-				PRODUCT_BUNDLE_IDENTIFIER = "com.kaylahall.rowing";
-				PRODUCT_NAME = "rowing";
+				PRODUCT_BUNDLE_IDENTIFIER = com.ooople.rowing;
+				PRODUCT_NAME = rowing;
 				SWIFT_OBJC_BRIDGING_HEADER = "rowing/rowing-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -400,8 +400,8 @@
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
-				PRODUCT_BUNDLE_IDENTIFIER = "com.kaylahall.rowing";
-				PRODUCT_NAME = "rowing";
+				PRODUCT_BUNDLE_IDENTIFIER = com.ooople.rowing;
+				PRODUCT_NAME = rowing;
 				SWIFT_OBJC_BRIDGING_HEADER = "rowing/rowing-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
