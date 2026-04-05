@@ -6,7 +6,10 @@
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo run:android",
+    "android:release": "expo run:android --variant release --no-bundler",
     "ios": "expo run:ios",
+    "ios:release": "expo run:ios --configuration Release --no-bundler",
+    "ios:standalone": "expo run:ios --configuration Release --scheme rowing-standalone --no-bundler",
     "web": "expo start --web",
     "lint": "expo lint"
   },
