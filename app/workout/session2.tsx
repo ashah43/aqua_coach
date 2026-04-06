@@ -528,7 +528,7 @@ export default function WorkoutSessionScreen() {
   }, [isRunning]);
 
   const elapsedSec = Math.max(0, Math.floor(elapsedMs / 1000));
-  const splitDistanceM = motionDistanceM;
+  const splitDistanceM = gpsDistanceM; //chose gps because it is more acurate right now
 
   const splitText = useMemo(() => {
     if (!showSplit) return '';
