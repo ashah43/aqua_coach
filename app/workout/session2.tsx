@@ -168,6 +168,7 @@ export default function WorkoutSessionScreen() {
 
   const [showSplit, setShowSplit] = useState(true);
   const [showAvgPower, setShowAvgPower] = useState(true);
+  const [showLiveAcceleration, setShowLiveAcceleration] = useState(true);
   const [showAccelGraph, setShowAccelGraph] = useState(true);
   const [showPowerGraph, setShowPowerGraph] = useState(true);
   const [showMotionDistance, setShowMotionDistance] = useState(true);
@@ -683,9 +684,14 @@ export default function WorkoutSessionScreen() {
               onPress={() => setShowSplit((v) => !v)}
             />
             <Pill
-              label="Avg Power"
+              label="Power"
               active={showAvgPower}
               onPress={() => setShowAvgPower((v) => !v)}
+            />
+            <Pill
+              label="Live Accel"
+              active={showLiveAcceleration}
+              onPress={() => setShowLiveAcceleration((v) => !v)}
             />
             <Pill
               label="Accel Graph"
@@ -795,13 +801,17 @@ export default function WorkoutSessionScreen() {
             ) : (
               <View style={styles.metricSpacer} />
             )}
-            <ThemedView style={styles.metricCardSm}>
-              <View style={[styles.cardAccent, { backgroundColor: COLORS.aqua2 }]} />
-              <ThemedText style={styles.metricLabelSm}>Live Acceleration</ThemedText>
-              <ThemedText style={styles.metricValueSm}>
-                {accelMag.toFixed(2)} m/s²
-              </ThemedText>
-            </ThemedView>
+            {showLiveAcceleration ? (
+              <ThemedView style={styles.metricCardSm}>
+                <View style={[styles.cardAccent, { backgroundColor: COLORS.aqua2 }]} />
+                <ThemedText style={styles.metricLabelSm}>Live Acceleration</ThemedText>
+                <ThemedText style={styles.metricValueSm}>
+                  {accelMag.toFixed(2)} m/s²
+                </ThemedText>
+              </ThemedView>
+            ) : (
+              <View style={styles.metricSpacer} />
+            )}
           </View>
 
           {showAccelGraph && (
