@@ -593,12 +593,6 @@ export default function WorkoutSessionScreen() {
                 consecutive coordinates. Indoors, this may drift or jump more than usual.
               </ThemedText>
 
-              <ThemedText style={styles.modalSectionTitle}>Avg Acceleration</ThemedText>
-              <ThemedText style={styles.modalBody}>
-                Average acceleration is the running average of the phone&apos;s measured
-                acceleration magnitude during the session.
-              </ThemedText>
-
               <ThemedText style={styles.modalSectionTitle}>Live Acceleration</ThemedText>
               <ThemedText style={styles.modalBody}>
                 Live acceleration shows the current acceleration magnitude from the phone
