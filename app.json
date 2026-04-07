@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "rowing",
+    "name": "AquaCoach",
     "slug": "rowing",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -12,6 +12,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.kaylahall.rowing",
       "infoPlist": {
+        "CFBundleDisplayName": "AquaCoach",
         "NSBluetoothAlwaysUsageDescription": "App needs Bluetooth to connect to Arduino",
         "NSBluetoothPeripheralUsageDescription": "App needs Bluetooth to connect to Arduino"
       }
