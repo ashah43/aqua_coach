@@ -795,9 +795,6 @@ export default function WorkoutSessionScreen() {
             ) : (
               <View style={styles.metricSpacer} />
             )}
-          </View>
-
-          <View style={styles.metricsRow}>
             <ThemedView style={styles.metricCardSm}>
               <View style={[styles.cardAccent, { backgroundColor: COLORS.aqua2 }]} />
               <ThemedText style={styles.metricLabelSm}>Live Acceleration</ThemedText>
@@ -805,8 +802,6 @@ export default function WorkoutSessionScreen() {
                 {accelMag.toFixed(2)} m/s²
               </ThemedText>
             </ThemedView>
-
-            <View style={styles.metricSpacer} />
           </View>
 
           {showAccelGraph && (
