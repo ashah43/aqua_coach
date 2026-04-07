@@ -168,7 +168,6 @@ export default function WorkoutSessionScreen() {
 
   const [showSplit, setShowSplit] = useState(true);
   const [showAvgPower, setShowAvgPower] = useState(true);
-  const [showAvgAccel, setShowAvgAccel] = useState(true);
   const [showAccelGraph, setShowAccelGraph] = useState(true);
   const [showPowerGraph, setShowPowerGraph] = useState(true);
   const [showMotionDistance, setShowMotionDistance] = useState(true);
@@ -178,12 +177,8 @@ export default function WorkoutSessionScreen() {
   const [motionDistanceM, setMotionDistanceM] = useState(0);
   const [gpsDistanceM, setGpsDistanceM] = useState(0);
   const [accelMag, setAccelMag] = useState(0);
-  const [accelAvg, setAccelAvg] = useState(0);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [power, setPower] = useState(0);
-
-  const accelSumRef = useRef(0);
-  const accelCountRef = useRef(0);
 
   const ACCEL_SAMPLES = 40;
   const POWER_SAMPLES = 40;
@@ -253,7 +248,6 @@ export default function WorkoutSessionScreen() {
       duration_seconds: Math.floor(elapsedMs / 1000),
       distance_m: motionDistanceM,
       avg_power_w: power,
-      avg_acceleration: accelAvg,
     });
 
   if (error) {
@@ -404,10 +398,6 @@ export default function WorkoutSessionScreen() {
 
         const mag = Math.sqrt(ax * ax + ay * ay + (a.z ?? 0) ** 2);
         setAccelMag(mag);
-
-        accelSumRef.current += mag;
-        accelCountRef.current += 1;
-        setAccelAvg(accelSumRef.current / Math.max(1, accelCountRef.current));
 
         const now = Date.now();
         if (lastTsRef.current == null) {
@@ -698,11 +688,6 @@ export default function WorkoutSessionScreen() {
               onPress={() => setShowAvgPower((v) => !v)}
             />
             <Pill
-              label="Avg Accel"
-              active={showAvgAccel}
-              onPress={() => setShowAvgAccel((v) => !v)}
-            />
-            <Pill
               label="Accel Graph"
               active={showAccelGraph}
               onPress={() => setShowAccelGraph((v) => !v)}
@@ -793,26 +778,6 @@ export default function WorkoutSessionScreen() {
           )}
 
           <View style={styles.metricsRow}>
-            {showAvgAccel ? (
-              <ThemedView style={styles.metricCardSm}>
-                <View style={[styles.cardAccent, { backgroundColor: COLORS.coral }]} />
-                <ThemedText style={styles.metricLabelSm}>Avg Acceleration</ThemedText>
-                <ThemedText style={styles.metricValueSm}>
-                  {accelAvg.toFixed(2)} m/s²
-                </ThemedText>
-                <View style={styles.progressBarTrackSm}>
-                  <View
-                    style={[
-                      styles.progressBarFill,
-                      { width: `${Math.min(accelAvg * 10, 100)}%` },
-                    ]}
-                  />
-                </View>
-              </ThemedView>
-            ) : (
-              <View style={styles.metricSpacer} />
-            )}
-
             {showAvgPower ? (
               <ThemedView style={styles.metricCardSm}>
                 <View style={[styles.cardAccent, { backgroundColor: COLORS.navy }]} />
