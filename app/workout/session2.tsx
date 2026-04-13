@@ -1,5 +1,6 @@
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
+import { bleManager } from '@/lib/ble';
 import { supabase } from '@/lib/supabase';
 import { Buffer } from 'buffer';
 import * as Location from 'expo-location';
@@ -15,7 +16,7 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
-import { BleManager, type Device } from 'react-native-ble-plx';
+import { type Device } from 'react-native-ble-plx';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Line, Path, Rect } from 'react-native-svg';
 
@@ -31,7 +32,7 @@ const COLORS = {
   track: '#E9ECF2',
 };
 
-const manager = new BleManager();
+const manager = bleManager;
 const R = 22;
 
 const Pill = ({
@@ -164,7 +165,9 @@ export default function WorkoutSessionScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ useSensor?: string }>();
 
-  const useSensor = params.useSensor === 'true';
+  // Testing mode: default to sensor ON when opening this screen directly.
+  // Pass useSensor='false' in route params only when you explicitly want BLE disabled.
+  const useSensor = params.useSensor !== 'false';
 
   const [showSplit, setShowSplit] = useState(true);
   const [showAvgPower, setShowAvgPower] = useState(true);
@@ -217,7 +220,7 @@ export default function WorkoutSessionScreen() {
   const gpsDistanceRef = useRef(0);
 
   const [arduinoDevice, setArduinoDevice] = useState<Device | null>(null);
-  const [bleStatus, setBleStatus] = useState<string>('');
+  const [bleStatus, setBleStatus] = useState<string>('Scanning for device...');
 
   useEffect(() => {
     setPowerSeries((prev) => {
@@ -275,7 +278,7 @@ export default function WorkoutSessionScreen() {
     }
   }
 
-  useEffect(() => {
+  /* useEffect(() => {
     let interval: ReturnType<typeof setInterval> | null = null;
 
     if (isRunning) {
@@ -305,25 +308,36 @@ export default function WorkoutSessionScreen() {
 
     const connectToBle = async () => {
       try {
+        const SCAN_TIMEOUT_MS = 10000;
+        const timeoutId = setTimeout(() => {
+          manager.stopDeviceScan();
+          if (!cancelled) setBleStatus('No force sensor found');
+        }, SCAN_TIMEOUT_MS);
+
         setBleStatus('Scanning for force sensor...');
 
         manager.startDeviceScan([SERVICE_UUID], null, async (error, device) => {
           if (error) {
+            clearTimeout(timeoutId);
             console.log('BLE scan error:', error);
             setBleStatus('BLE scan failed');
             return;
           }
 
-          if (!device?.serviceUUIDs?.includes(SERVICE_UUID) && device?.name == null) {
+          const matchedByService = !!device?.serviceUUIDs?.includes(SERVICE_UUID);
+          const matchedByName = device?.name?.toLowerCase() === 'rowingtest';
+          if (!matchedByService && !matchedByName) {
             return;
           }
 
           if (cancelled) return;
 
+          clearTimeout(timeoutId);
           manager.stopDeviceScan();
 
           try {
             setBleStatus('Connecting to force sensor...');
+            if (!device) return;
             const connected = await device.connect();
             await connected.discoverAllServicesAndCharacteristics();
 
@@ -371,6 +385,71 @@ export default function WorkoutSessionScreen() {
       manager.stopDeviceScan();
     };
   }, [useSensor]);
+
+  */
+
+  //retrying bluetooth for connection on wokrout session page
+  useEffect(() => {
+  const scan = manager.startDeviceScan(null, null, (error, device) => {
+    console.log('Searching for device');
+    if (error) {
+      console.log('Scan error:', error);
+      setBleStatus('Scan failed. Try again.');
+      return;
+    }
+
+    if (device?.name === 'RowingIMU') {
+      setBleStatus('Device found! Connecting...');
+      manager.stopDeviceScan();
+
+      device
+        .connect()
+        .then((d) => {
+            console.log('Connected to board:');
+          setBleStatus('Connected! Discovering services...');
+          return d.discoverAllServicesAndCharacteristics();
+        })
+        .then((d) => {
+          setBleStatus('Services discovered! Listening for data...');
+          setArduinoDevice(d);
+          const serviceUUID = '12345678-1234-5678-1234-56789abcdef0'; // replace
+          const charUUID = '12345678-1234-5678-1234-56789abcdef1'; // replace
+
+          d.monitorCharacteristicForService(serviceUUID, charUUID, (err, char) => {
+      if (err) {
+        console.log('Characteristic error:', err);
+        setBleStatus('Error reading data.');
+        return;
+      }
+      if (char?.value) {
+        const data = Buffer.from(char.value, 'base64');
+        const packetID = data[0];
+        let newPower = 0;
+
+        if (data.length >= 3) {
+          newPower = data.readUInt16LE(1);
+        }
+
+        if (!isNaN(newPower)) {
+          setPower(newPower);
+        }
+
+        console.log(`Packet ${packetID} Power:`, newPower);
+      }
+    });
+  })
+        .catch((err) => {
+          console.log('Connection error:', err);
+          setBleStatus('Connection failed. Try again.');
+        });
+    }
+  });
+
+  return () => {
+    manager.stopDeviceScan();
+  };
+}, []);
+
 
   useEffect(() => {
     if (!isRunning) return;
@@ -663,7 +742,7 @@ export default function WorkoutSessionScreen() {
               </View>
             </View>
 
-            {useSensor && !!bleStatus && arduinoDevice && (
+            {useSensor && !!bleStatus && (
               <View style={styles.bleBanner}>
                 <ThemedText style={styles.bleBannerText}>{bleStatus}</ThemedText>
               </View>

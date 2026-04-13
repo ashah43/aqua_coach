@@ -112,7 +112,7 @@ export default function WorkoutScreen() {
       setIsScanning(false);
       setBleStatus('Not connected');
       timeoutRef.current = null;
-    }, 5000);
+    }, 10000);
 
     manager.startDeviceScan([SERVICE_UUID], { allowDuplicates: false }, (error, device) => {
       if (error) {
