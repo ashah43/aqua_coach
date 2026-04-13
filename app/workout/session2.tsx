@@ -1,6 +1,6 @@
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
-import { bleManager } from '@/lib/ble';
+//import { bleManager } from '@/lib/ble';
 import { supabase } from '@/lib/supabase';
 import { Buffer } from 'buffer';
 import * as Location from 'expo-location';
@@ -16,7 +16,7 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
-import { type Device } from 'react-native-ble-plx';
+import { BleManager, Device } from 'react-native-ble-plx';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Line, Path, Rect } from 'react-native-svg';
 
@@ -32,7 +32,7 @@ const COLORS = {
   track: '#E9ECF2',
 };
 
-const manager = bleManager;
+const manager = new BleManager();
 const R = 22;
 
 const Pill = ({
