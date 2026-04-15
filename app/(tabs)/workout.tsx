@@ -2,7 +2,7 @@
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import {
   ImageBackground,
   Keyboard,
@@ -16,10 +16,7 @@ import {
   TouchableWithoutFeedback,
   View,
 } from 'react-native';
-import { BleManager, type Device } from 'react-native-ble-plx';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
-const manager = new BleManager();
 
 const COLORS = {
   navy: '#04507D',
@@ -44,11 +41,6 @@ function clampNumber(n: number, min: number, max: number) {
 export default function WorkoutScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-
-  const [arduinoDevice, setArduinoDevice] = useState<Device | null>(null);
-  const [bleStatus, setBleStatus] = useState<string>('Not connected');
-  const [isScanning, setIsScanning] = useState(false);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ---- Workout Goals ----
   const [goalDurationMin, setGoalDurationMin] = useState(30);
@@ -86,68 +78,6 @@ export default function WorkoutScreen() {
 
     setIsEditOpen(false);
   };
-
-  // ---- BLE ----
-  const handleConnectDevice = () => {
-    if (arduinoDevice) {
-      router.push('/workout/session2');
-      return;
-    }
-
-    if (isScanning) {
-      manager.stopDeviceScan();
-      setIsScanning(false);
-      setBleStatus('Not connected');
-      return;
-    }
-
-    setIsScanning(true);
-    setBleStatus('Scanning for device...');
-    const SERVICE_UUID = '12345678-1234-5678-1234-56789abcdef0';
-
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-
-    timeoutRef.current = setTimeout(() => {
-      manager.stopDeviceScan();
-      setIsScanning(false);
-      setBleStatus('Not connected');
-      timeoutRef.current = null;
-    }, 10000);
-
-    manager.startDeviceScan([SERVICE_UUID], { allowDuplicates: false }, (error, device) => {
-      if (error) {
-        if (timeoutRef.current) clearTimeout(timeoutRef.current);
-        setBleStatus('Not connected');
-        setIsScanning(false);
-        return;
-      }
-
-      if (!device) return;
-
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-
-      manager.stopDeviceScan();
-      setIsScanning(false);
-
-      device
-        .connect()
-        .then((d) => d.discoverAllServicesAndCharacteristics())
-        .then((d) => {
-          setArduinoDevice(d);
-          setBleStatus('Connected! Ready to start workout');
-        })
-        .catch(() => setBleStatus('Not connected'));
-    });
-  };
-
-  useEffect(() => {
-    return () => {
-      manager.stopDeviceScan();
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    };
-  }, []);
-
-  const showBleBanner = (isScanning || arduinoDevice) && bleStatus !== 'Not connected';
 
   return (
     <ImageBackground
@@ -195,19 +125,16 @@ export default function WorkoutScreen() {
           </View>
         </ThemedView>
 
-        {showBleBanner && (
-          <ThemedView style={styles.bleStatusContainer}>
-            <ThemedText style={styles.bleStatusText}>{bleStatus}</ThemedText>
-          </ThemedView>
-        )}
-
-        <Pressable style={styles.cta} onPress={handleConnectDevice}>
-          <ThemedText style={styles.ctaText}>
-            {arduinoDevice ? 'Ready to Start Workout' : isScanning ? 'Scanning...' : 'Connect Device'}
-          </ThemedText>
+        <Pressable style={styles.cta} onPress={() => router.push('/workout/session2')}>
+          <ThemedText style={styles.ctaText}>Start Workout</ThemedText>
         </Pressable>
 
-        <Pressable style={styles.ctaSecondary} onPress={() => router.push('/workout/session2')}>
+        <Pressable
+          style={styles.ctaSecondary}
+          onPress={() =>
+            router.push({ pathname: '/workout/session2', params: { useSensor: 'false' } })
+          }
+        >
           <ThemedText style={styles.ctaSecondaryText}>Continue without Device</ThemedText>
         </Pressable>
       </ScrollView>
@@ -310,9 +237,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.2,
   },
-
-  bleStatusContainer: { padding: 10, backgroundColor: '#EAF7FB', borderRadius: 12 },
-  bleStatusText: { fontWeight: '800', color: COLORS.navy },
 
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)' },
   modalContainer: { position: 'absolute', left: 16, right: 16, top: '20%' },
