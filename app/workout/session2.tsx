@@ -36,6 +36,54 @@ const manager = new BleManager();
 const R = 22;
 const BLE_LOG_TAG = '[BLE_SESSION2]';
 
+/** Fixed vertical range for the acceleration chart (m/s²); does not auto-rescale. */
+const ACCEL_CHART_Y_MIN = -6;
+const ACCEL_CHART_Y_MAX = 6;
+/** Low-pass gravity estimate so stroke axis stays stable while rowing. */
+const GRAVITY_LPF_ALPHA = 0.96;
+/** Light smoothing on signed “along boat” accel for the graph. */
+const ALONG_BOAT_LPF_ALPHA = 0.55;
+/** Flip to -1 if drive and recovery appear inverted for your mount. */
+const BOAT_ACCEL_SIGN = 1;
+
+type Vec3 = { x: number; y: number; z: number };
+
+const dot3 = (a: Vec3, b: Vec3) => a.x * b.x + a.y * b.y + a.z * b.z;
+
+const norm3 = (v: Vec3) => Math.hypot(v.x, v.y, v.z);
+
+const normalize3 = (v: Vec3): Vec3 | null => {
+  const n = norm3(v);
+  if (n < 1e-6) return null;
+  const s = 1 / n;
+  return { x: v.x * s, y: v.y * s, z: v.z * s };
+};
+
+/**
+ * Unit vector along the hull in the horizontal (water) plane, in device coordinates.
+ * Assumes the phone’s +Y axis points roughly toward the bow when foot-mounted.
+ */
+function strokeAxisFromGravity(gravityInDevice: Vec3): Vec3 | null {
+  const g = normalize3(gravityInDevice);
+  if (!g) return null;
+  const ey: Vec3 = { x: 0, y: 1, z: 0 };
+  const d = dot3(ey, g);
+  let vx = ey.x - d * g.x;
+  let vy = ey.y - d * g.y;
+  let vz = ey.z - d * g.z;
+  let len = Math.hypot(vx, vy, vz);
+  if (len < 0.08) {
+    const ex: Vec3 = { x: 1, y: 0, z: 0 };
+    const d2 = dot3(ex, g);
+    vx = ex.x - d2 * g.x;
+    vy = ex.y - d2 * g.y;
+    vz = ex.z - d2 * g.z;
+    len = Math.hypot(vx, vy, vz);
+  }
+  if (len < 1e-6) return null;
+  return { x: vx / len, y: vy / len, z: vz / len };
+}
+
 const Pill = ({
   label,
   active,
@@ -57,14 +105,15 @@ function useSmoothPath(
   width: number,
   height: number,
   padX = 16,
-  padY = 16
+  padY = 16,
+  yDomain?: { min: number; max: number }
 ) {
   return useMemo(() => {
     if (!data.length) return '';
     const w = width - padX * 2;
     const h = height - padY * 2;
-    const min = Math.min(...data);
-    const max = Math.max(...data);
+    const min = yDomain?.min ?? Math.min(...data);
+    const max = yDomain?.max ?? Math.max(...data);
     const range = Math.max(1e-3, max - min);
 
     const xs: number[] = [];
@@ -72,8 +121,10 @@ function useSmoothPath(
     const stepX = w / Math.max(1, data.length - 1);
 
     data.forEach((v, i) => {
+      const clamped =
+        yDomain != null ? Math.min(yDomain.max, Math.max(yDomain.min, v)) : v;
       xs.push(padX + i * stepX);
-      ys.push(padY + (1 - (v - min) / range) * h);
+      ys.push(padY + (1 - (clamped - min) / range) * h);
     });
 
     let d = `M ${xs[0]} ${ys[0]}`;
@@ -84,23 +135,40 @@ function useSmoothPath(
     }
     d += ` T ${xs[xs.length - 1]} ${ys[xs.length - 1]}`;
     return d;
-  }, [data, width, height, padX, padY]);
+  }, [data, width, height, padX, padY, yDomain]);
 }
 
 function CurveChart({
   title,
   data,
+  yDomain,
+  showZeroLine,
+  footnote,
 }: {
   title: string;
   data: number[];
+  yDomain?: { min: number; max: number };
+  showZeroLine?: boolean;
+  footnote?: string;
 }) {
   const WIDTH = 320;
   const HEIGHT = 180;
-  const path = useSmoothPath(data, WIDTH, HEIGHT);
+  const PAD = 16;
+  const path = useSmoothPath(data, WIDTH, HEIGHT, PAD, PAD, yDomain);
+
+  const yZeroPx = useMemo(() => {
+    if (!showZeroLine || !yDomain) return null;
+    const h = HEIGHT - PAD * 2;
+    const range = yDomain.max - yDomain.min;
+    if (range <= 0) return null;
+    if (!(yDomain.min < 0 && yDomain.max > 0)) return null;
+    return PAD + (1 - (0 - yDomain.min) / range) * h;
+  }, [showZeroLine, yDomain, HEIGHT]);
 
   return (
     <ThemedView style={styles.chartCard}>
       <ThemedText style={styles.chartTitle}>{title}</ThemedText>
+      {footnote ? <ThemedText style={styles.chartFootnote}>{footnote}</ThemedText> : null}
       <View style={styles.chartArea}>
         <Svg width="100%" height="100%" viewBox={`0 0 ${WIDTH} ${HEIGHT}`}>
           <Rect x={0} y={0} width={WIDTH} height={HEIGHT} rx={14} fill="#F7F8FB" />
@@ -126,6 +194,18 @@ function CurveChart({
               strokeWidth={1}
             />
           ))}
+
+          {yZeroPx != null ? (
+            <Line
+              x1={16}
+              x2={WIDTH - 16}
+              y1={yZeroPx}
+              y2={yZeroPx}
+              stroke={COLORS.blue}
+              strokeWidth={1.25}
+              strokeDasharray="6 5"
+            />
+          ) : null}
 
           <Path
             d={`${path} L ${WIDTH - 16} ${HEIGHT - 16} L ${16} ${HEIGHT - 16} Z`}
@@ -182,7 +262,8 @@ export default function WorkoutSessionScreen() {
 
   const [motionDistanceM, setMotionDistanceM] = useState(0);
   const [gpsDistanceM, setGpsDistanceM] = useState(0);
-  const [accelMag, setAccelMag] = useState(0);
+  /** User acceleration along hull (horizontal), m/s²; sign from mount orientation (+Y ≈ bow). */
+  const [accelAlongBoat, setAccelAlongBoat] = useState(0);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [power, setPower] = useState(0);
 
@@ -202,6 +283,10 @@ export default function WorkoutSessionScreen() {
   const vxRef = useRef(0);
   const vyRef = useRef(0);
   const sRef = useRef(0);
+
+  const gravLpRef = useRef<Vec3>({ x: 0, y: 0, z: 0 });
+  const strokeAxisRef = useRef<Vec3>({ x: 0, y: 1, z: 0 });
+  const alongLpRef = useRef(0);
 
   const axLpRef = useRef(0);
   const ayLpRef = useRef(0);
@@ -455,15 +540,52 @@ export default function WorkoutSessionScreen() {
       motionSub = DeviceMotion.addListener((evt: DeviceMotionMeasurement) => {
         if (removed) return;
 
-        const a =
-          evt.acceleration ??
-          evt.accelerationIncludingGravity ?? { x: 0, y: 0, z: 0 };
+        const inc = evt.accelerationIncludingGravity ?? { x: 0, y: 0, z: 0 };
+        const user = evt.acceleration
+          ? {
+              x: evt.acceleration.x ?? 0,
+              y: evt.acceleration.y ?? 0,
+              z: evt.acceleration.z ?? 0,
+            }
+          : null;
 
-        let ax = a.x ?? 0;
-        let ay = a.y ?? 0;
+        let ax = user?.x ?? inc.x ?? 0;
+        let ay = user?.y ?? inc.y ?? 0;
 
-        const mag = Math.sqrt(ax * ax + ay * ay + (a.z ?? 0) ** 2);
-        setAccelMag(mag);
+        if (user) {
+          const gravMeas: Vec3 = {
+            x: inc.x - user.x,
+            y: inc.y - user.y,
+            z: inc.z - user.z,
+          };
+          const ga = GRAVITY_LPF_ALPHA;
+          gravLpRef.current = {
+            x: ga * gravLpRef.current.x + (1 - ga) * gravMeas.x,
+            y: ga * gravLpRef.current.y + (1 - ga) * gravMeas.y,
+            z: ga * gravLpRef.current.z + (1 - ga) * gravMeas.z,
+          };
+
+          const axis = strokeAxisFromGravity(gravLpRef.current);
+          if (axis) strokeAxisRef.current = axis;
+
+          const alongRaw = BOAT_ACCEL_SIGN * dot3(user, strokeAxisRef.current);
+          alongLpRef.current =
+            ALONG_BOAT_LPF_ALPHA * alongLpRef.current +
+            (1 - ALONG_BOAT_LPF_ALPHA) * alongRaw;
+          setAccelAlongBoat(alongLpRef.current);
+
+          setAccelSeries((prev) => {
+            const next = prev.slice(1);
+            next.push(alongLpRef.current);
+            return next;
+          });
+        } else {
+          setAccelSeries((prev) => {
+            const next = prev.slice(1);
+            next.push(alongLpRef.current);
+            return next;
+          });
+        }
 
         const now = Date.now();
         if (lastTsRef.current == null) {
@@ -506,12 +628,6 @@ export default function WorkoutSessionScreen() {
 
         sRef.current += speed * dt * SCALE;
         setMotionDistanceM(sRef.current);
-
-        setAccelSeries((prev) => {
-          const next = prev.slice(1);
-          next.push(mag);
-          return next;
-        });
       });
     })();
 
@@ -651,8 +767,10 @@ export default function WorkoutSessionScreen() {
 
               <ThemedText style={styles.modalSectionTitle}>Live Acceleration</ThemedText>
               <ThemedText style={styles.modalBody}>
-                Live acceleration shows the current acceleration magnitude from the phone
-                sensors in real time.
+                Live acceleration is estimated along the hull in the horizontal plane using
+                user acceleration and gravity, so a tilted foot mount still reads drive vs
+                recovery as positive vs negative when the phone’s long edge points toward the
+                bow. If the sign feels reversed, change BOAT_ACCEL_SIGN in the session code.
               </ThemedText>
 
               <ThemedText style={styles.modalSectionTitle}>Power</ThemedText>
@@ -663,7 +781,10 @@ export default function WorkoutSessionScreen() {
 
               <ThemedText style={styles.modalSectionTitle}>Acceleration Graph</ThemedText>
               <ThemedText style={styles.modalBody}>
-                This graph shows recent live acceleration values over time.
+                The graph uses the same hull-aligned acceleration as the live readout. The
+                vertical scale is fixed (not auto-zoomed) so you can compare strokes; values
+                outside the range clip at the edges. The dashed line is zero acceleration along
+                the stroke axis.
               </ThemedText>
 
               <ThemedText style={styles.modalSectionTitle}>Power Graph</ThemedText>
@@ -875,7 +996,8 @@ export default function WorkoutSessionScreen() {
                 <View style={[styles.cardAccent, { backgroundColor: COLORS.aqua2 }]} />
                 <ThemedText style={styles.metricLabelSm}>Live Acceleration</ThemedText>
                 <ThemedText style={styles.metricValueSm}>
-                  {accelMag.toFixed(2)} m/s²
+                  {accelAlongBoat >= 0 ? '+' : ''}
+                  {accelAlongBoat.toFixed(2)} m/s²
                 </ThemedText>
               </ThemedView>
             ) : (
@@ -884,7 +1006,13 @@ export default function WorkoutSessionScreen() {
           </View>
 
           {showAccelGraph && (
-            <CurveChart title="Acceleration Over Time" data={accelSeries} />
+            <CurveChart
+              title="Acceleration along boat"
+              footnote={`Fixed scale ${ACCEL_CHART_Y_MIN} … ${ACCEL_CHART_Y_MAX} m/s² (dashed = 0). Mount: phone +Y toward bow.`}
+              data={accelSeries}
+              yDomain={{ min: ACCEL_CHART_Y_MIN, max: ACCEL_CHART_Y_MAX }}
+              showZeroLine
+            />
           )}
           {supportsBlePower && showPowerGraph && (
             <CurveChart title="Power Over Time" data={powerSeries} />
@@ -1098,9 +1226,17 @@ const styles = StyleSheet.create({
   chartTitle: {
     textAlign: 'center',
     fontSize: 16,
-    marginBottom: 12,
+    marginBottom: 6,
     fontWeight: '800',
     letterSpacing: -0.1,
+  },
+  chartFootnote: {
+    textAlign: 'center',
+    fontSize: 11,
+    opacity: 0.72,
+    marginBottom: 10,
+    lineHeight: 15,
+    paddingHorizontal: 4,
   },
   chartArea: { height: 180, borderRadius: 14, overflow: 'hidden' },
 
