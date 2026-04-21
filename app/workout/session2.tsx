@@ -37,8 +37,8 @@ const R = 22;
 const BLE_LOG_TAG = '[BLE_SESSION2]';
 
 /** Fixed vertical range for the acceleration chart (m/s²); does not auto-rescale. */
-const ACCEL_CHART_Y_MIN = -6;
-const ACCEL_CHART_Y_MAX = 6;
+const ACCEL_CHART_Y_MIN = -9;
+const ACCEL_CHART_Y_MAX = 5;
 /** Low-pass gravity estimate so stroke axis stays stable while rowing. */
 const GRAVITY_LPF_ALPHA = 0.96;
 /** Light smoothing on signed “along boat” accel for the graph. */
