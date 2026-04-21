@@ -143,13 +143,11 @@ function CurveChart({
   data,
   yDomain,
   showZeroLine,
-  footnote,
 }: {
   title: string;
   data: number[];
   yDomain?: { min: number; max: number };
   showZeroLine?: boolean;
-  footnote?: string;
 }) {
   const WIDTH = 320;
   const HEIGHT = 180;
@@ -168,7 +166,6 @@ function CurveChart({
   return (
     <ThemedView style={styles.chartCard}>
       <ThemedText style={styles.chartTitle}>{title}</ThemedText>
-      {footnote ? <ThemedText style={styles.chartFootnote}>{footnote}</ThemedText> : null}
       <View style={styles.chartArea}>
         <Svg width="100%" height="100%" viewBox={`0 0 ${WIDTH} ${HEIGHT}`}>
           <Rect x={0} y={0} width={WIDTH} height={HEIGHT} rx={14} fill="#F7F8FB" />
@@ -976,7 +973,6 @@ export default function WorkoutSessionScreen() {
           {showAccelGraph && (
             <CurveChart
               title="Acceleration along boat"
-              footnote={`Fixed scale ${ACCEL_CHART_Y_MIN} … ${ACCEL_CHART_Y_MAX} m/s² (dashed = 0). Mount: phone +Y toward bow.`}
               data={accelSeries}
               yDomain={{ min: ACCEL_CHART_Y_MIN, max: ACCEL_CHART_Y_MAX }}
               showZeroLine
@@ -1194,17 +1190,9 @@ const styles = StyleSheet.create({
   chartTitle: {
     textAlign: 'center',
     fontSize: 16,
-    marginBottom: 6,
+    marginBottom: 12,
     fontWeight: '800',
     letterSpacing: -0.1,
-  },
-  chartFootnote: {
-    textAlign: 'center',
-    fontSize: 11,
-    opacity: 0.72,
-    marginBottom: 10,
-    lineHeight: 15,
-    paddingHorizontal: 4,
   },
   chartArea: { height: 180, borderRadius: 14, overflow: 'hidden' },
 
