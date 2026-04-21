@@ -253,7 +253,6 @@ export default function WorkoutSessionScreen() {
 
   const [showSplit, setShowSplit] = useState(true);
   const [showAvgPower, setShowAvgPower] = useState(true);
-  const [showLiveAcceleration, setShowLiveAcceleration] = useState(true);
   const [showAccelGraph, setShowAccelGraph] = useState(true);
   const [showPowerGraph, setShowPowerGraph] = useState(true);
   const [showMotionDistance, setShowMotionDistance] = useState(true);
@@ -262,8 +261,6 @@ export default function WorkoutSessionScreen() {
 
   const [motionDistanceM, setMotionDistanceM] = useState(0);
   const [gpsDistanceM, setGpsDistanceM] = useState(0);
-  /** User acceleration along hull (horizontal), m/s²; sign from mount orientation (+Y ≈ bow). */
-  const [accelAlongBoat, setAccelAlongBoat] = useState(0);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [power, setPower] = useState(0);
 
@@ -572,7 +569,6 @@ export default function WorkoutSessionScreen() {
           alongLpRef.current =
             ALONG_BOAT_LPF_ALPHA * alongLpRef.current +
             (1 - ALONG_BOAT_LPF_ALPHA) * alongRaw;
-          setAccelAlongBoat(alongLpRef.current);
 
           setAccelSeries((prev) => {
             const next = prev.slice(1);
@@ -765,14 +761,6 @@ export default function WorkoutSessionScreen() {
                 consecutive coordinates. Indoors, this may drift or jump more than usual.
               </ThemedText>
 
-              <ThemedText style={styles.modalSectionTitle}>Live Acceleration</ThemedText>
-              <ThemedText style={styles.modalBody}>
-                Live acceleration is estimated along the hull in the horizontal plane using
-                user acceleration and gravity, so a tilted foot mount still reads drive vs
-                recovery as positive vs negative when the phone’s long edge points toward the
-                bow. If the sign feels reversed, change BOAT_ACCEL_SIGN in the session code.
-              </ThemedText>
-
               <ThemedText style={styles.modalSectionTitle}>Power</ThemedText>
               <ThemedText style={styles.modalBody}>
                 Power is read from the connected force sensor over BLE. If no sensor is
@@ -781,10 +769,11 @@ export default function WorkoutSessionScreen() {
 
               <ThemedText style={styles.modalSectionTitle}>Acceleration Graph</ThemedText>
               <ThemedText style={styles.modalBody}>
-                The graph uses the same hull-aligned acceleration as the live readout. The
-                vertical scale is fixed (not auto-zoomed) so you can compare strokes; values
-                outside the range clip at the edges. The dashed line is zero acceleration along
-                the stroke axis.
+                The graph shows hull-aligned acceleration from device motion (user acceleration
+                projected on the boat axis using gravity). The vertical scale is fixed (not
+                auto-zoomed) so you can compare strokes; values outside the range clip at the
+                edges. The dashed line is zero along the stroke axis. If drive and recovery look
+                inverted, change BOAT_ACCEL_SIGN in the session code.
               </ThemedText>
 
               <ThemedText style={styles.modalSectionTitle}>Power Graph</ThemedText>
@@ -877,11 +866,6 @@ export default function WorkoutSessionScreen() {
               />
             )}
             <Pill
-              label="Live Accel"
-              active={showLiveAcceleration}
-              onPress={() => setShowLiveAcceleration((v) => !v)}
-            />
-            <Pill
               label="Accel Graph"
               active={showAccelGraph}
               onPress={() => setShowAccelGraph((v) => !v)}
@@ -973,37 +957,21 @@ export default function WorkoutSessionScreen() {
             </>
           )}
 
-          <View style={styles.metricsRow}>
-            {supportsBlePower && showAvgPower ? (
-              <ThemedView style={styles.metricCardSm}>
-                <View style={[styles.cardAccent, { backgroundColor: COLORS.navy }]} />
-                <ThemedText style={styles.metricLabelSm}>Power</ThemedText>
-                <ThemedText style={styles.metricValueSm}>{power.toFixed(0)} W</ThemedText>
-                <View style={styles.progressBarTrackSm}>
-                  <View
-                    style={[
-                      styles.progressBarFill,
-                      { width: `${Math.min((power / 300) * 100, 100)}%` },
-                    ]}
-                  />
-                </View>
-              </ThemedView>
-            ) : (
-              <View style={styles.metricSpacer} />
-            )}
-            {showLiveAcceleration ? (
-              <ThemedView style={styles.metricCardSm}>
-                <View style={[styles.cardAccent, { backgroundColor: COLORS.aqua2 }]} />
-                <ThemedText style={styles.metricLabelSm}>Live Acceleration</ThemedText>
-                <ThemedText style={styles.metricValueSm}>
-                  {accelAlongBoat >= 0 ? '+' : ''}
-                  {accelAlongBoat.toFixed(2)} m/s²
-                </ThemedText>
-              </ThemedView>
-            ) : (
-              <View style={styles.metricSpacer} />
-            )}
-          </View>
+          {supportsBlePower && showAvgPower ? (
+            <ThemedView style={styles.metricCardFull}>
+              <View style={[styles.cardAccent, { backgroundColor: COLORS.navy }]} />
+              <ThemedText style={styles.metricLabelSm}>Power</ThemedText>
+              <ThemedText style={styles.metricValueSm}>{power.toFixed(0)} W</ThemedText>
+              <View style={styles.progressBarTrackSm}>
+                <View
+                  style={[
+                    styles.progressBarFill,
+                    { width: `${Math.min((power / 300) * 100, 100)}%` },
+                  ]}
+                />
+              </View>
+            </ThemedView>
+          ) : null}
 
           {showAccelGraph && (
             <CurveChart
