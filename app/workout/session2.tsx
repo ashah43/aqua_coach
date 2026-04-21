@@ -422,6 +422,20 @@ export default function WorkoutSessionScreen() {
     };
   }, [useSensor]);
 
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    if (isRunning) {
+      const resumeStart = Date.now() - elapsedMs;
+      interval = setInterval(() => {
+        setElapsedMs(Date.now() - resumeStart);
+      }, 250);
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isRunning]);
 
   useEffect(() => {
     if (!isRunning) return;
@@ -523,8 +537,8 @@ export default function WorkoutSessionScreen() {
       sub = await Location.watchPositionAsync(
         {
           accuracy: Location.Accuracy.BestForNavigation,
-          timeInterval: 1000,
-          distanceInterval: 1,
+          timeInterval: 1000, //this is updating the location every second
+          distanceInterval: 1, //this is updating the location every 1 meter
         },
         (loc) => {
           if (cancelled) return;
