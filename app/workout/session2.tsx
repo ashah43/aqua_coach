@@ -38,13 +38,13 @@ const BLE_LOG_TAG = '[BLE_SESSION2]';
 
 /** Fixed vertical range for the acceleration chart (m/s²); does not auto-rescale. */
 const ACCEL_CHART_Y_MIN = -9;
-const ACCEL_CHART_Y_MAX = 5;
+const ACCEL_CHART_Y_MAX = 6;
 /** Low-pass gravity estimate so stroke axis stays stable while rowing. */
 const GRAVITY_LPF_ALPHA = 0.96;
 /** Light smoothing on signed “along boat” accel for the graph. */
 const ALONG_BOAT_LPF_ALPHA = 0.55;
 /** Flip to -1 if drive and recovery appear inverted for your mount. */
-const BOAT_ACCEL_SIGN = 1;
+const BOAT_ACCEL_SIGN = -1;
 
 type Vec3 = { x: number; y: number; z: number };
 
@@ -260,6 +260,7 @@ export default function WorkoutSessionScreen() {
   const [gpsDistanceM, setGpsDistanceM] = useState(0);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [power, setPower] = useState(0);
+  const [strokeRateSpm, setStrokeRateSpm] = useState(0);
 
   const ACCEL_SAMPLES = 40;
   const POWER_SAMPLES = 40;
@@ -281,6 +282,11 @@ export default function WorkoutSessionScreen() {
   const gravLpRef = useRef<Vec3>({ x: 0, y: 0, z: 0 });
   const strokeAxisRef = useRef<Vec3>({ x: 0, y: 1, z: 0 });
   const alongLpRef = useRef(0);
+  const strokePhaseHighRef = useRef(false);
+  const strokeLastPeakMsRef = useRef<number | null>(null);
+  const strokeIntervalsMsRef = useRef<number[]>([]);
+  const strokeRateLpRef = useRef(0);
+  const strokeRateIntRef = useRef(0);
 
   const axLpRef = useRef(0);
   const ayLpRef = useRef(0);
@@ -294,6 +300,12 @@ export default function WorkoutSessionScreen() {
   const STILL_MS = 180;
   const MIN_SPEED = 0.12;
   const SCALE = 0.18;
+  const STROKE_ON_THRESHOLD = 0.42;
+  const STROKE_OFF_THRESHOLD = -0.05;
+  const STROKE_MIN_INTERVAL_MS = 700;
+  const STROKE_MAX_INTERVAL_MS = 4000;
+  const STROKE_WINDOW = 6;
+  const STROKE_RATE_LPF_ALPHA = 0.65;
 
   const gpsLastRef = useRef<(Location.LocationObjectCoords & { timestamp?: number }) | null>(
     null
@@ -310,6 +322,13 @@ export default function WorkoutSessionScreen() {
       next.push(sample);
       return next;
     });
+  };
+
+  const publishStrokeRate = (spm: number) => {
+    const rounded = Math.max(0, Math.round(spm));
+    if (rounded === strokeRateIntRef.current) return;
+    strokeRateIntRef.current = rounded;
+    setStrokeRateSpm(rounded);
   };
 
  const handleDone = async () => {
@@ -533,6 +552,7 @@ export default function WorkoutSessionScreen() {
 
       motionSub = DeviceMotion.addListener((evt: DeviceMotionMeasurement) => {
         if (removed) return;
+        const now = Date.now();
 
         const inc = evt.accelerationIncludingGravity ?? { x: 0, y: 0, z: 0 };
         const user = evt.acceleration
@@ -567,6 +587,40 @@ export default function WorkoutSessionScreen() {
             ALONG_BOAT_LPF_ALPHA * alongLpRef.current +
             (1 - ALONG_BOAT_LPF_ALPHA) * alongRaw;
 
+          const along = alongLpRef.current;
+          if (!strokePhaseHighRef.current && along >= STROKE_ON_THRESHOLD) {
+            const lastPeak = strokeLastPeakMsRef.current;
+            if (lastPeak != null) {
+              const interval = now - lastPeak;
+              if (interval >= STROKE_MIN_INTERVAL_MS && interval <= STROKE_MAX_INTERVAL_MS) {
+                const nextIntervals = [...strokeIntervalsMsRef.current, interval].slice(
+                  -STROKE_WINDOW
+                );
+                strokeIntervalsMsRef.current = nextIntervals;
+                const avgInterval =
+                  nextIntervals.reduce((sum, ms) => sum + ms, 0) / nextIntervals.length;
+                const rawSpm = 60000 / avgInterval;
+                strokeRateLpRef.current =
+                  STROKE_RATE_LPF_ALPHA * strokeRateLpRef.current +
+                  (1 - STROKE_RATE_LPF_ALPHA) * rawSpm;
+                publishStrokeRate(strokeRateLpRef.current);
+              }
+            }
+            strokeLastPeakMsRef.current = now;
+            strokePhaseHighRef.current = true;
+          } else if (strokePhaseHighRef.current && along <= STROKE_OFF_THRESHOLD) {
+            strokePhaseHighRef.current = false;
+          }
+
+          const sinceLastPeak = strokeLastPeakMsRef.current
+            ? now - strokeLastPeakMsRef.current
+            : Number.POSITIVE_INFINITY;
+          if (sinceLastPeak > STROKE_MAX_INTERVAL_MS * 1.6) {
+            strokeIntervalsMsRef.current = [];
+            strokeRateLpRef.current = 0;
+            publishStrokeRate(0);
+          }
+
           setAccelSeries((prev) => {
             const next = prev.slice(1);
             next.push(alongLpRef.current);
@@ -580,7 +634,6 @@ export default function WorkoutSessionScreen() {
           });
         }
 
-        const now = Date.now();
         if (lastTsRef.current == null) {
           lastTsRef.current = now;
           return;
@@ -913,6 +966,20 @@ export default function WorkoutSessionScreen() {
               <View style={styles.metricSpacer} />
             )}
           </View>
+
+          <ThemedView style={styles.metricCardFull}>
+            <View style={[styles.cardAccent, { backgroundColor: COLORS.navy }]} />
+            <ThemedText style={styles.metricLabelSm}>Stroke Rate</ThemedText>
+            <ThemedText style={styles.metricValueSm}>{strokeRateSpm} spm</ThemedText>
+            <View style={styles.progressBarTrackSm}>
+              <View
+                style={[
+                  styles.progressBarFill,
+                  { width: `${Math.min((strokeRateSpm / 40) * 100, 100)}%` },
+                ]}
+              />
+            </View>
+          </ThemedView>
 
           {showDistanceCards && (
             <>
