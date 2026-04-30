@@ -39,6 +39,9 @@ const BLE_LOG_TAG = '[BLE_SESSION2]';
 /** Fixed vertical range for the acceleration chart (m/s²); does not auto-rescale. */
 const ACCEL_CHART_Y_MIN = -9;
 const ACCEL_CHART_Y_MAX = 6;
+/** Fixed vertical range for power chart (W); does not auto-rescale. */
+const POWER_CHART_Y_MIN = 0;
+const POWER_CHART_Y_MAX = 1000;
 /** Low-pass gravity estimate so stroke axis stays stable while rowing. */
 const GRAVITY_LPF_ALPHA = 0.96;
 /** Light smoothing on signed “along boat” accel for the graph. */
@@ -263,7 +266,10 @@ export default function WorkoutSessionScreen() {
   const [strokeRateSpm, setStrokeRateSpm] = useState(0);
 
   const ACCEL_SAMPLES = 40;
-  const POWER_SAMPLES = 40;
+  // Longer power window so the trace moves slower across the chart.
+  const POWER_SAMPLES = 80;
+  // Average N incoming BLE samples into one plotted point (reduces waviness).
+  const POWER_AVG_WINDOW = 5;
 
   const [accelSeries, setAccelSeries] = useState<number[]>(
     Array(ACCEL_SAMPLES).fill(0)
@@ -287,6 +293,9 @@ export default function WorkoutSessionScreen() {
   const strokeIntervalsMsRef = useRef<number[]>([]);
   const strokeRateLpRef = useRef(0);
   const strokeRateIntRef = useRef(0);
+  // Start-to-start stroke segmentation for accel graph
+  const accelStrokeCollectRef = useRef<number[]>([]);
+  const accelStrokeStartedRef = useRef(false);
 
   const axLpRef = useRef(0);
   const ayLpRef = useRef(0);
@@ -314,14 +323,42 @@ export default function WorkoutSessionScreen() {
 
   const [arduinoDevice, setArduinoDevice] = useState<Device | null>(null);
   const [bleStatus, setBleStatus] = useState<string>('Scanning for device...');
+  const powerAggSumRef = useRef(0);
+  const powerAggCountRef = useRef(0);
 
   const pushPowerSample = (sample: number) => {
     setPower(sample);
+    // Plot averaged points (not every raw point) for a smoother, more quadratic-looking curve.
+    powerAggSumRef.current += sample;
+    powerAggCountRef.current += 1;
+
+    if (powerAggCountRef.current < POWER_AVG_WINDOW) return;
+
+    const averaged = powerAggSumRef.current / powerAggCountRef.current;
+    powerAggSumRef.current = 0;
+    powerAggCountRef.current = 0;
+
     setPowerSeries((prev) => {
       const next = prev.slice(1);
-      next.push(sample);
+      next.push(averaged);
       return next;
     });
+  };
+
+  const resampleToFixedLength = (values: number[], targetLen: number) => {
+    if (values.length === 0) return Array(targetLen).fill(0);
+    if (values.length === 1) return Array(targetLen).fill(values[0]);
+
+    const out: number[] = [];
+    for (let i = 0; i < targetLen; i++) {
+      const pos = (i / Math.max(1, targetLen - 1)) * (values.length - 1);
+      const lo = Math.floor(pos);
+      const hi = Math.ceil(pos);
+      const t = pos - lo;
+      if (lo === hi) out.push(values[lo]);
+      else out.push(values[lo] * (1 - t) + values[hi] * t);
+    }
+    return out;
   };
 
   const publishStrokeRate = (spm: number) => {
@@ -588,25 +625,37 @@ export default function WorkoutSessionScreen() {
             (1 - ALONG_BOAT_LPF_ALPHA) * alongRaw;
 
           const along = alongLpRef.current;
+          let startedNewStroke = false;
           if (!strokePhaseHighRef.current && along >= STROKE_ON_THRESHOLD) {
             const lastPeak = strokeLastPeakMsRef.current;
-            if (lastPeak != null) {
-              const interval = now - lastPeak;
-              if (interval >= STROKE_MIN_INTERVAL_MS && interval <= STROKE_MAX_INTERVAL_MS) {
-                const nextIntervals = [...strokeIntervalsMsRef.current, interval].slice(
-                  -STROKE_WINDOW
-                );
-                strokeIntervalsMsRef.current = nextIntervals;
-                const avgInterval =
-                  nextIntervals.reduce((sum, ms) => sum + ms, 0) / nextIntervals.length;
-                const rawSpm = 60000 / avgInterval;
-                strokeRateLpRef.current =
-                  STROKE_RATE_LPF_ALPHA * strokeRateLpRef.current +
-                  (1 - STROKE_RATE_LPF_ALPHA) * rawSpm;
-                publishStrokeRate(strokeRateLpRef.current);
-              }
+            const interval = lastPeak != null ? now - lastPeak : null;
+            const canStartNewStroke =
+              lastPeak == null ||
+              (interval != null && interval >= STROKE_MIN_INTERVAL_MS);
+
+            if (canStartNewStroke && interval != null && interval <= STROKE_MAX_INTERVAL_MS) {
+              const nextIntervals = [...strokeIntervalsMsRef.current, interval].slice(
+                -STROKE_WINDOW
+              );
+              strokeIntervalsMsRef.current = nextIntervals;
+              const avgInterval =
+                nextIntervals.reduce((sum, ms) => sum + ms, 0) / nextIntervals.length;
+              const rawSpm = 60000 / avgInterval;
+              strokeRateLpRef.current =
+                STROKE_RATE_LPF_ALPHA * strokeRateLpRef.current +
+                (1 - STROKE_RATE_LPF_ALPHA) * rawSpm;
+              publishStrokeRate(strokeRateLpRef.current);
             }
-            strokeLastPeakMsRef.current = now;
+
+            if (canStartNewStroke) {
+              startedNewStroke = true;
+              strokeLastPeakMsRef.current = now;
+            }
+
+            if (lastPeak == null) {
+              // First stroke start: anchor timing
+              strokeLastPeakMsRef.current = now;
+            }
             strokePhaseHighRef.current = true;
           } else if (strokePhaseHighRef.current && along <= STROKE_OFF_THRESHOLD) {
             strokePhaseHighRef.current = false;
@@ -621,17 +670,31 @@ export default function WorkoutSessionScreen() {
             publishStrokeRate(0);
           }
 
-          setAccelSeries((prev) => {
-            const next = prev.slice(1);
-            next.push(alongLpRef.current);
-            return next;
-          });
+          // Build start-to-start strokes:
+          // Keep current visual until next stroke begins, then swap in completed stroke.
+          if (startedNewStroke) {
+            if (accelStrokeStartedRef.current && accelStrokeCollectRef.current.length >= 8) {
+              setAccelSeries(resampleToFixedLength(accelStrokeCollectRef.current, ACCEL_SAMPLES));
+            }
+            accelStrokeCollectRef.current = [along];
+            accelStrokeStartedRef.current = true;
+          } else if (accelStrokeStartedRef.current) {
+            const nextStroke = [...accelStrokeCollectRef.current, along];
+            // Keep one-stroke time-span bounded so this curve represents a stroke, not timeline drift
+            accelStrokeCollectRef.current =
+              nextStroke.length > ACCEL_SAMPLES * 3
+                ? nextStroke.slice(nextStroke.length - ACCEL_SAMPLES * 3)
+                : nextStroke;
+          }
         } else {
-          setAccelSeries((prev) => {
-            const next = prev.slice(1);
-            next.push(alongLpRef.current);
-            return next;
-          });
+          // Fallback path: if no user accel available, still continue collecting once started.
+          if (accelStrokeStartedRef.current) {
+            const nextStroke = [...accelStrokeCollectRef.current, alongLpRef.current];
+            accelStrokeCollectRef.current =
+              nextStroke.length > ACCEL_SAMPLES * 3
+                ? nextStroke.slice(nextStroke.length - ACCEL_SAMPLES * 3)
+                : nextStroke;
+          }
         }
 
         if (lastTsRef.current == null) {
@@ -1046,7 +1109,11 @@ export default function WorkoutSessionScreen() {
             />
           )}
           {supportsBlePower && showPowerGraph && (
-            <CurveChart title="Power Over Time" data={powerSeries} />
+            <CurveChart
+              title="Power Over Time"
+              data={powerSeries}
+              yDomain={{ min: POWER_CHART_Y_MIN, max: POWER_CHART_Y_MAX }}
+            />
           )}
 
           <View style={{ height: 28 }} />
