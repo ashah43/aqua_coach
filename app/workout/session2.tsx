@@ -270,6 +270,11 @@ export default function WorkoutSessionScreen() {
   const POWER_SAMPLES = 80;
   // Average N incoming BLE samples into one plotted point (reduces waviness).
   const POWER_AVG_WINDOW = 5;
+  // Stroke on power: detect one stroke from near-zero -> active -> near-zero.
+  const POWER_STROKE_START_THRESHOLD = 8;
+  const POWER_STROKE_END_THRESHOLD = 4;
+  const POWER_STROKE_MIN_ACTIVE_POINTS = 2;
+  const POWER_STROKE_IDLE_HOLD_MS = 350;
 
   const [accelSeries, setAccelSeries] = useState<number[]>(
     Array(ACCEL_SAMPLES).fill(0)
@@ -279,6 +284,11 @@ export default function WorkoutSessionScreen() {
   );
 
   const [isRunning, setIsRunning] = useState(true);
+  const isRunningRef = useRef(isRunning);
+
+  useEffect(() => {
+    isRunningRef.current = isRunning;
+  }, [isRunning]);
 
   const lastTsRef = useRef<number | null>(null);
   const vxRef = useRef(0);
@@ -321,9 +331,13 @@ export default function WorkoutSessionScreen() {
   const [bleStatus, setBleStatus] = useState<string>('Scanning for device...');
   const powerAggSumRef = useRef(0);
   const powerAggCountRef = useRef(0);
+  const powerStrokeActiveRef = useRef(false);
+  const powerStrokeMaxRef = useRef(0);
+  const powerStrokePointsRef = useRef(0);
+  const powerStrokeBelowStartSinceRef = useRef<number | null>(null);
 
   const pushPowerSample = (sample: number) => {
-    setPower(sample);
+    if (!isRunningRef.current) return;
     // Plot averaged points (not every raw point) for a smoother, more quadratic-looking curve.
     powerAggSumRef.current += sample;
     powerAggCountRef.current += 1;
@@ -339,6 +353,44 @@ export default function WorkoutSessionScreen() {
       next.push(averaged);
       return next;
     });
+
+    // Power-defined stroke segmentation:
+    // one stroke = leaves near-zero and then returns near-zero.
+    if (!powerStrokeActiveRef.current) {
+      if (averaged >= POWER_STROKE_START_THRESHOLD) {
+        powerStrokeActiveRef.current = true;
+        powerStrokeMaxRef.current = averaged;
+        powerStrokePointsRef.current = 1;
+      }
+      return;
+    }
+
+    powerStrokeMaxRef.current = Math.max(powerStrokeMaxRef.current, averaged);
+    powerStrokePointsRef.current += 1;
+
+    if (averaged < POWER_STROKE_START_THRESHOLD) {
+      if (powerStrokeBelowStartSinceRef.current == null) {
+        powerStrokeBelowStartSinceRef.current = Date.now();
+      }
+    } else {
+      powerStrokeBelowStartSinceRef.current = null;
+    }
+
+    const idleLongEnough =
+      powerStrokeBelowStartSinceRef.current != null &&
+      Date.now() - powerStrokeBelowStartSinceRef.current >= POWER_STROKE_IDLE_HOLD_MS;
+
+    const strokeFinished =
+      powerStrokePointsRef.current >= POWER_STROKE_MIN_ACTIVE_POINTS &&
+      (averaged <= POWER_STROKE_END_THRESHOLD || idleLongEnough);
+
+    if (strokeFinished) {
+      setPower(powerStrokeMaxRef.current);
+      powerStrokeActiveRef.current = false;
+      powerStrokeMaxRef.current = 0;
+      powerStrokePointsRef.current = 0;
+      powerStrokeBelowStartSinceRef.current = null;
+    }
   };
 
   const publishStrokeRate = (spm: number) => {
@@ -514,7 +566,7 @@ export default function WorkoutSessionScreen() {
               if (data.length >= 3) {
                 const byte1 = data.readUInt8(1);
                 const byte2 = data.readUInt8(2);
-                const newPower = byte1 + (byte2 * 256) / 70;
+                const newPower = (byte1 + (byte2 * 256) )/ 100;
                 if (!isNaN(newPower)) pushPowerSample(newPower);
                 console.warn(`${BLE_LOG_TAG} Power bytes b1=${byte1} b2=${byte2} PowerW=${newPower}`);
               }
