@@ -41,7 +41,7 @@ const ACCEL_CHART_Y_MIN = -9;
 const ACCEL_CHART_Y_MAX = 6;
 /** Fixed vertical range for power chart (W); does not auto-rescale. */
 const POWER_CHART_Y_MIN = 0;
-const POWER_CHART_Y_MAX = 1000;
+const POWER_CHART_Y_MAX = 400;
 /** Low-pass gravity estimate so stroke axis stays stable while rowing. */
 const GRAVITY_LPF_ALPHA = 0.96;
 /** Light smoothing on signed “along boat” accel for the graph. */
@@ -293,10 +293,6 @@ export default function WorkoutSessionScreen() {
   const strokeIntervalsMsRef = useRef<number[]>([]);
   const strokeRateLpRef = useRef(0);
   const strokeRateIntRef = useRef(0);
-  // Start-to-start stroke segmentation for accel graph
-  const accelStrokeCollectRef = useRef<number[]>([]);
-  const accelStrokeStartedRef = useRef(false);
-
   const axLpRef = useRef(0);
   const ayLpRef = useRef(0);
   const stillAccumRef = useRef(0);
@@ -343,22 +339,6 @@ export default function WorkoutSessionScreen() {
       next.push(averaged);
       return next;
     });
-  };
-
-  const resampleToFixedLength = (values: number[], targetLen: number) => {
-    if (values.length === 0) return Array(targetLen).fill(0);
-    if (values.length === 1) return Array(targetLen).fill(values[0]);
-
-    const out: number[] = [];
-    for (let i = 0; i < targetLen; i++) {
-      const pos = (i / Math.max(1, targetLen - 1)) * (values.length - 1);
-      const lo = Math.floor(pos);
-      const hi = Math.ceil(pos);
-      const t = pos - lo;
-      if (lo === hi) out.push(values[lo]);
-      else out.push(values[lo] * (1 - t) + values[hi] * t);
-    }
-    return out;
   };
 
   const publishStrokeRate = (spm: number) => {
@@ -534,7 +514,7 @@ export default function WorkoutSessionScreen() {
               if (data.length >= 3) {
                 const byte1 = data.readUInt8(1);
                 const byte2 = data.readUInt8(2);
-                const newPower = byte1 + byte2 * 256;
+                const newPower = byte1 + (byte2 * 256) / 70;
                 if (!isNaN(newPower)) pushPowerSample(newPower);
                 console.warn(`${BLE_LOG_TAG} Power bytes b1=${byte1} b2=${byte2} PowerW=${newPower}`);
               }
@@ -670,31 +650,19 @@ export default function WorkoutSessionScreen() {
             publishStrokeRate(0);
           }
 
-          // Build start-to-start strokes:
-          // Keep current visual until next stroke begins, then swap in completed stroke.
-          if (startedNewStroke) {
-            if (accelStrokeStartedRef.current && accelStrokeCollectRef.current.length >= 8) {
-              setAccelSeries(resampleToFixedLength(accelStrokeCollectRef.current, ACCEL_SAMPLES));
-            }
-            accelStrokeCollectRef.current = [along];
-            accelStrokeStartedRef.current = true;
-          } else if (accelStrokeStartedRef.current) {
-            const nextStroke = [...accelStrokeCollectRef.current, along];
-            // Keep one-stroke time-span bounded so this curve represents a stroke, not timeline drift
-            accelStrokeCollectRef.current =
-              nextStroke.length > ACCEL_SAMPLES * 3
-                ? nextStroke.slice(nextStroke.length - ACCEL_SAMPLES * 3)
-                : nextStroke;
-          }
+          // Live acceleration trace: slide continuously.
+          setAccelSeries((prev) => {
+            const next = prev.slice(1);
+            next.push(along);
+            return next;
+          });
         } else {
-          // Fallback path: if no user accel available, still continue collecting once started.
-          if (accelStrokeStartedRef.current) {
-            const nextStroke = [...accelStrokeCollectRef.current, alongLpRef.current];
-            accelStrokeCollectRef.current =
-              nextStroke.length > ACCEL_SAMPLES * 3
-                ? nextStroke.slice(nextStroke.length - ACCEL_SAMPLES * 3)
-                : nextStroke;
-          }
+          // Fallback path when gravity-separated user acceleration is unavailable.
+          setAccelSeries((prev) => {
+            const next = prev.slice(1);
+            next.push(alongLpRef.current);
+            return next;
+          });
         }
 
         if (lastTsRef.current == null) {
