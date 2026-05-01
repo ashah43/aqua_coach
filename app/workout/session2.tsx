@@ -566,7 +566,7 @@ export default function WorkoutSessionScreen() {
               if (data.length >= 3) {
                 const byte1 = data.readUInt8(1);
                 const byte2 = data.readUInt8(2);
-                const newPower = (byte1 + (byte2 * 256) )/ 100;
+                const newPower = (byte1 + (byte2 * 256) )/10;
                 if (!isNaN(newPower)) pushPowerSample(newPower);
                 console.warn(`${BLE_LOG_TAG} Power bytes b1=${byte1} b2=${byte2} PowerW=${newPower}`);
               }
